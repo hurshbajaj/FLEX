@@ -91,7 +91,7 @@ let string_of_mode mode = match mode with
 let rgb r g b text = Printf.sprintf "\027[38;2;%d;%d;%dm%s\027[0m" r g b text
 
 let draw_status edtr = 
-    let content = if edtr.status_i = 0 then ( string_of_mode (edtr.mode) ) else (Printf.sprintf "%d : %d | %s" edtr.cy edtr.cx "DUMMY.txt") in
+    let content = if edtr.status_i = 0 then ( string_of_mode (edtr.mode) ) else (Printf.sprintf "%d : %d | %s" edtr.cy edtr.cx "src / main.ml") in
 
     cursor_to edtr.status_row edtr.status_start;
     Printf.printf "%s" (String.make edtr.status_len ' ');
