@@ -1,6 +1,4 @@
-[@@@warning "-37"]
-[@@@warning "-26-27-32-33"]
-[@@@warning "-69"]
+[@@@warning "-26-27-32-33-21-69-37"]
 
 open Unix
 
@@ -48,6 +46,15 @@ let buffer_of_file file =
 type act_info = {
     mutable vp_shift: int;
 }
+type status = {
+    mutable status_i: int;
+    mutable status_len: int;
+    mutable status_start: int;
+    mutable status_row: int;
+
+    mutable overlap: bool;
+    gap: int;
+}
 type editor = {
     buffer: buffer;
     viewport: viewport;
@@ -57,10 +64,7 @@ type editor = {
     mutable cy: int;
     mutable mode: mode;
 
-    mutable status_i: int;
-    mutable status_len: int;
-    mutable status_start: int;
-    mutable status_row: int;
+    status: status;
 
     act_info: act_info;
 }
@@ -109,7 +113,7 @@ let read_bytes () =
 
 let read_char () =
     let b1, b2, _, _, _ = read_bytes () in
-    if b1 = '\027' && ( b2 = '[' || b2 = 'O' ) then ( '\000', '\000' ) else ( b1, b2 )
+    if b1 = '\027' && ( b2 = '[' || b2 = 'O' ) then ( '\000', '\000' ) else (if b1 = '\027' then ( let bn, _, _, _, _ = read_bytes () in ( b1, bn ) ) else (b1, '\000') )
 
 let string_of_mode mode = match mode with
 | Mode_Jmp -> "JMP"
@@ -118,21 +122,22 @@ let string_of_mode mode = match mode with
 let rgb r g b text = Printf.sprintf "\027[38;2;%d;%d;%dm%s\027[0m" r g b text
 
 let draw_status edtr = 
-    let content = if edtr.status_i = 0 then ( string_of_mode (edtr.mode) ) else (Printf.sprintf "%d : %d | %s" edtr.cy edtr.cx (Printf.sprintf "%s / %s" (Filename.basename ( Filename.dirname (Unix.realpath edtr.buffer.file))) edtr.buffer.file)) in
+    let content = if edtr.status.status_i = 0 then ( string_of_mode (edtr.mode) ) else (Printf.sprintf "%d : %d | %s" edtr.cy edtr.cx (Printf.sprintf "%s / %s" (Filename.basename ( Filename.dirname (Unix.realpath edtr.buffer.file))) edtr.buffer.file)) in
 
-    cursor_to edtr.status_row edtr.status_start;
-    Printf.printf "%s" (String.make edtr.status_len ' ');
+    cursor_to edtr.status.status_row edtr.status.status_start;
+    Printf.printf "%s" (String.make edtr.status.status_len ' ');
     
     let new_status_len = String.length content + 5 in
     let new_status_start = fst(edtr.size) - new_status_len + 1 in
     let new_status_row = snd edtr.size in
+    let highlight = rgb 212 118 215 in
     
-    cursor_to new_status_row new_status_start;
-    Printf.printf "%s" (ANSITerminal.sprintf [ANSITerminal.Bold] "%s" content ^  (rgb 212 118 215 " <~"));
+    cursor_to new_status_row ( new_status_start - (if edtr.status.overlap then 2 else 0) ) ;
+    Printf.printf "%s" (ANSITerminal.sprintf [ANSITerminal.Bold] "%s" (if edtr.status.overlap then (highlight "| ") else "") ^ content ^  (highlight " <~"));
     
-    edtr.status_len <- new_status_len;
-    edtr.status_start <- new_status_start;
-    edtr.status_row <- new_status_row
+    edtr.status.status_len <- new_status_len;
+    edtr.status.status_start <- new_status_start;
+    edtr.status.status_row <- new_status_row
 
 let draw_viewport edtr = 
     for i=1 to snd edtr.size  do
@@ -140,9 +145,12 @@ let draw_viewport edtr =
         let content = if real_line > List.length edtr.buffer.lines - 1 then "" else ( List.nth edtr.buffer.lines real_line) in
         cursor_to i 1;
         print_string "\027[K";
-        let foc = try String.sub content edtr.viewport.left (String.length content - edtr.viewport.left - (if i= snd edtr.size - 1 then (edtr.status_start) else 0)) with | Invalid_argument _ -> "" in
+        let foc_ = try String.sub content edtr.viewport.left (String.length content - edtr.viewport.left ) with | Invalid_argument _ -> "" in
+        let foc = if i = snd edtr.size && String.length foc_ > edtr.status.status_start - edtr.status.gap then ( edtr.status.overlap <- true; String.sub foc_ 0 (edtr.status.status_start - edtr.status.gap) ) else (edtr.status.overlap <- false; foc_ ) in
         print_string (foc);
-        let crnt_vp = try String.length content / String.length foc with | Division_by_zero -> 0 in
+
+        let crnt_vp = try ( max 0 (String.length content - 1) ) / fst edtr.size with | Division_by_zero -> 0 in
+        print_int crnt_vp;
         if edtr.act_info.vp_shift < crnt_vp then edtr.act_info.vp_shift <- crnt_vp
         
     done
@@ -162,16 +170,16 @@ let handle_jmp_ev ev =
     | 'd', '\000' -> Act_MovRight
     | 'q', '\000' -> Act_Quit
     | 'i', '\000' -> Act_StatusI
-    | '\027', '\000' -> Act_ModeSwitch (Mode_Edt)
+    | '\027', ' ' -> Act_ModeSwitch (Mode_Edt)
     | '\027', 'l' -> Act_VpShiftX
     | _, _ -> Act_NONE
 
 let handle_edit_ev ev = 
-    match fst ev with
-    | '\000' -> Act_NONE
-    | '\027' -> Act_ModeSwitch (Mode_Jmp)
-    | '\n' -> Act_AddNewline
-    | c -> Act_AddChar c 
+    match ev with
+    | '\000', '\000' -> Act_NONE
+    | '\027', c -> (match c with | ' ' ->  Act_ModeSwitch (Mode_Jmp) | _ -> Act_NONE)
+    | '\n', '\000' -> Act_AddNewline
+    | c, _ -> Act_AddChar c 
 
 let handle_ev mode ev = 
     match mode with
@@ -191,9 +199,10 @@ let run edtr =
     while true do (
         draw edtr;
 
-        if edtr.cy = snd edtr.size && edtr.cx >= edtr.status_start - 4 then edtr.cx <- max 1 (edtr.status_start - 4);
-        cursor_to edtr.cy edtr.cx;
+        if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap);
 
+        draw edtr;
+            
         let action = handle_ev edtr.mode ( read_char () ) in
 
         match action with
@@ -229,7 +238,10 @@ let run edtr =
             )
 
         | Act_StatusI -> (
-            if edtr.status_i = 0 then ( edtr.status_i <- 1 ) else ( edtr.status_i <- 0 )
+            if edtr.status.status_i = 0 then ( edtr.status.status_i <- 1 ) else ( edtr.status.status_i <- 0 )
+        )
+        | Act_VpShiftX -> (
+            edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size)
         )
         | _ -> ()
 
@@ -254,6 +266,14 @@ let () =
     } in
 
     let size = ANSITerminal.size () in
+    let status = {
+        status_i = 0;
+        status_len = 0;
+        status_start = fst size;
+        status_row = snd size;
+        overlap = false;
+        gap = 4;
+    } in
     let edtr = {
         viewport = viewport_of_ctx buffer size;
         buffer;
@@ -261,11 +281,7 @@ let () =
         cx = 1;
         cy = 1;
         mode = Mode_Jmp;
-        status_i = 0;
-        status_len = 0;
-        status_start = fst size;
-        status_row = snd size;
-
+        status;
         act_info;
     } in
 
@@ -275,7 +291,7 @@ let () =
         edtr.cx <- min edtr.cx (fst ns); 
         if edtr.cy > snd ns then ( edtr.cy <- snd ns );
         draw edtr ;
-        if edtr.cy = snd ns && edtr.cx >= edtr.status_start - 4 then edtr.cx <- max 1 (edtr.status_start - 4);
+        if edtr.cy = snd ns && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap);
         cursor_to edtr.cy edtr.cx
     ));
 
