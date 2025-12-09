@@ -6,19 +6,15 @@ exception Break
 
 type mode = Mode_Edt | Mode_Jmp
 type action = 
-    | Act_MovUp 
-    | Act_MovDown 
-    | Act_MovLeft 
-    | Act_MovRight 
+    | Act_MovUp | Act_MovDown | Act_MovLeft | Act_MovRight 
     | Act_Quit 
     | Act_NONE 
     | Act_ModeSwitch of mode
-    | Act_AddChar of char
-    | Act_AddNewline
+    | Act_AddChar of char | Act_AddNewline
 
-    | Act_StatusI
+    | Act_StatusI | Act_ToggleStatus
 
-    | Act_VpShiftX
+    | Act_VpShiftX  
 
 type buffer = {
     file: string;
@@ -53,7 +49,9 @@ type status = {
     mutable status_row: int;
 
     mutable overlap: bool;
-    gap: int;
+    mutable gap: int;
+    mutable gap_: int;
+    mutable toggled: bool;
 }
 type editor = {
     buffer: buffer;
@@ -160,7 +158,7 @@ let draw_viewport edtr =
 
 let draw edtr = 
     draw_viewport edtr;
-    draw_status edtr;
+    if edtr.status.toggled then ( draw_status edtr);
     cursor_to edtr.cy edtr.cx;
     flush Stdlib.stdout
 
@@ -175,12 +173,13 @@ let handle_jmp_ev ev =
     | 'i', '\000' -> Act_StatusI
     | '\027', ' ' -> Act_ModeSwitch (Mode_Edt)
     | '\027', ';' -> Act_VpShiftX
+    | '\027', 'i' -> Act_ToggleStatus
     | _, _ -> Act_NONE
 
 let handle_edit_ev ev = 
     match ev with
     | '\000', '\000' -> Act_NONE
-    | '\027', c -> (match c with | ' ' ->  Act_ModeSwitch (Mode_Jmp) | _ -> Act_NONE)
+    | '\027', c -> (match c with | ' ' ->  Act_ModeSwitch (Mode_Jmp) | 'i' -> Act_ToggleStatus | _ -> Act_NONE)
     | '\n', '\000' -> Act_AddNewline
     | c, _ -> Act_AddChar c 
 
@@ -249,6 +248,9 @@ let run edtr =
         | Act_VpShiftX -> (
             edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size)
         )
+        | Act_ToggleStatus -> (
+            if edtr.status.toggled then (edtr.status.toggled <- false; edtr.status.gap <- 0) else (edtr.status.toggled <- true; edtr.status.gap <- edtr.status.gap_);
+        )
         | _ -> ()
 
     )done;
@@ -278,6 +280,8 @@ let () =
         status_row = snd size;
         overlap = false;
         gap = 4;
+        gap_ = 4;
+        toggled = true;
     } in
     let edtr = {
         viewport = viewport_of_ctx buffer size;
