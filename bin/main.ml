@@ -1,6 +1,6 @@
 [@@@warning "-37"]
-[@@@warning "-27"]
 [@@@warning "-26-27-32-33"]
+[@@@warning "-69"]
 
 open Unix
 
@@ -20,7 +20,33 @@ type action =
 
     | Act_StatusI
 
+type buffer = {
+    file: string;
+    lines: string list;
+}
+type viewport = {
+    mutable top: int;
+    mutable left: int;
+}
+let viewport_of_ctx buffer size = 
+    {
+        top = 0;
+        left = 0;
+    }
+
+let buffer_of_file file = 
+    let ic = open_in file in
+    let len = in_channel_length ic in
+    let content = really_input_string ic len in
+    close_in ic;
+    {
+        file = file;
+        lines = String.split_on_char '\n' content;
+    }
 type editor = {
+    buffer: buffer;
+    viewport: viewport;
+
     mutable size: int * int;
     mutable cx: int;
     mutable cy: int;
@@ -91,7 +117,7 @@ let string_of_mode mode = match mode with
 let rgb r g b text = Printf.sprintf "\027[38;2;%d;%d;%dm%s\027[0m" r g b text
 
 let draw_status edtr = 
-    let content = if edtr.status_i = 0 then ( string_of_mode (edtr.mode) ) else (Printf.sprintf "%d : %d | %s" edtr.cy edtr.cx "src / main.ml") in
+    let content = if edtr.status_i = 0 then ( string_of_mode (edtr.mode) ) else (Printf.sprintf "%d : %d | %s" edtr.cy edtr.cx (Printf.sprintf "%s / %s" (Filename.basename ( Filename.dirname (Unix.realpath edtr.buffer.file))) edtr.buffer.file)) in
 
     cursor_to edtr.status_row edtr.status_start;
     Printf.printf "%s" (String.make edtr.status_len ' ');
@@ -107,7 +133,17 @@ let draw_status edtr =
     edtr.status_start <- new_status_start;
     edtr.status_row <- new_status_row
 
+let draw_viewport edtr = 
+    for i=1 to snd edtr.size - 1 do
+        let real_line = (i - 1) + edtr.viewport.top in
+        let content = if real_line > List.length edtr.buffer.lines - 1 then "" else ( List.nth edtr.buffer.lines real_line) in
+        cursor_to i 1;
+        print_string "\027[K";
+        print_endline (try String.sub content edtr.viewport.left (String.length content - edtr.viewport.left - (if i= snd edtr.size - 1 then (edtr.status_start) else 0)) with | Invalid_argument _ -> "")
+    done
+
 let draw edtr = 
+    draw_viewport edtr;
     draw_status edtr;
     cursor_to edtr.cy edtr.cx;
     flush Stdlib.stdout
@@ -147,10 +183,10 @@ let run edtr =
     
     try 
     while true do (
+        draw edtr;
 
         if edtr.cy = snd edtr.size && edtr.cx >= edtr.status_start - 4 then edtr.cx <- max 1 (edtr.status_start - 4);
-
-        draw edtr;
+        cursor_to edtr.cy edtr.cx;
 
         let action = handle_ev edtr.mode ( read_char () ) in
 
@@ -194,8 +230,19 @@ let run edtr =
     disable_raw fd old
 
 let () = 
+    let argc = Array.length Sys.argv in
+    let file = ref "" in
+    if argc < 2 then print_endline "Usage -> .exec <file>" else 
+        (
+            file := Sys.argv.(1)
+        );
+
+    let buffer = buffer_of_file !file in
+
     let size = ANSITerminal.size () in
     let edtr = {
+        viewport = viewport_of_ctx buffer size;
+        buffer = buffer;
         size = size;
         cx = 1;
         cy = 1;
@@ -213,7 +260,7 @@ let () =
         if edtr.cy > snd ns then ( edtr.cy <- snd ns );
         draw edtr ;
         if edtr.cy = snd ns && edtr.cx >= edtr.status_start - 4 then edtr.cx <- max 1 (edtr.status_start - 4);
-        draw edtr 
+        cursor_to edtr.cy edtr.cx
     ));
 
     run edtr
