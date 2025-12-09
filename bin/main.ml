@@ -153,7 +153,7 @@ let draw_viewport edtr =
         let foc = if i = snd edtr.size && String.length foc_ > edtr.status.status_start - edtr.status.gap then ( edtr.status.overlap <- true; String.sub foc_ 0 (edtr.status.status_start - edtr.status.gap) ) else (edtr.status.overlap <- false; foc_ ) in
         print_string (foc);
 
-        let crnt_vp = try ( max 0 (  (String.length content) / fst edtr.size ) ) with | Division_by_zero -> 0 in
+        let crnt_vp = try ( max 0 (  (String.length content - 1) / fst edtr.size ) ) with | Division_by_zero -> 0 in
         if edtr.act_info.vp_shift < crnt_vp then edtr.act_info.vp_shift <- crnt_vp
         
     done
