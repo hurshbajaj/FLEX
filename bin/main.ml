@@ -93,6 +93,10 @@ let alt_screen cmd =
     if cmd = 1 then (print_string "\027[?1049h") else print_string "\027[?1049l";
     flush Stdlib.stdout
 
+let cleanup fd old = 
+    alt_screen 0;
+    disable_raw fd old
+
 let clear () =     
     print_string "\027[2J\027[H";
     flush Stdlib.stdout
@@ -149,7 +153,7 @@ let draw_viewport edtr =
         let foc = if i = snd edtr.size && String.length foc_ > edtr.status.status_start - edtr.status.gap then ( edtr.status.overlap <- true; String.sub foc_ 0 (edtr.status.status_start - edtr.status.gap) ) else (edtr.status.overlap <- false; foc_ ) in
         print_string (foc);
 
-        let crnt_vp = try ( max 0 (  (String.length content - 1) / fst edtr.size ) ) with | Division_by_zero -> 0 in
+        let crnt_vp = try ( max 0 (  (String.length content) / fst edtr.size ) ) with | Division_by_zero -> 0 in
         if edtr.act_info.vp_shift < crnt_vp then edtr.act_info.vp_shift <- crnt_vp
         
     done
@@ -170,7 +174,7 @@ let handle_jmp_ev ev =
     | 'q', '\000' -> Act_Quit
     | 'i', '\000' -> Act_StatusI
     | '\027', ' ' -> Act_ModeSwitch (Mode_Edt)
-    | '\027', 'l' -> Act_VpShiftX
+    | '\027', ';' -> Act_VpShiftX
     | _, _ -> Act_NONE
 
 let handle_edit_ev ev = 
@@ -200,6 +204,9 @@ let run edtr =
 
         if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap);
 
+        let real_length_ = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 ) in
+        if ( edtr.cx > real_length_) then edtr.cx <- real_length_;
+
         draw edtr;
             
         let action = handle_ev edtr.mode ( read_char () ) in
@@ -214,13 +221,13 @@ let run edtr =
         | Act_MovDown -> (
             if edtr.cy < snd edtr.size then edtr.cy <- edtr.cy + 1 else (
                 ( edtr.viewport.top <- edtr.viewport.top + 1; edtr.act_info.vp_shift <- 0; )
-            )
+            ) 
         )
         | Act_MovRight -> (
-            edtr.cx <- edtr.cx + 1
+            if not ( edtr.cx >= real_length_) then edtr.cx <- edtr.cx + 1;
         )
         | Act_MovLeft -> (
-            if not (edtr.cx = 1) then edtr.cx <- edtr.cx - 1
+            if not (edtr.cx = 1) then edtr.cx <- edtr.cx - 1 
         )
         | Act_ModeSwitch mode -> (
             edtr.mode <- mode
@@ -245,10 +252,9 @@ let run edtr =
         | _ -> ()
 
     )done;
-    with Break -> ();
+    with e -> (if not ( e = Break ) then ( (cleanup fd old); raise e));
 
-    alt_screen 0;
-    disable_raw fd old
+    cleanup fd old
 
 let () = 
     let argc = Array.length Sys.argv in
