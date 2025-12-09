@@ -20,6 +20,8 @@ type action =
 
     | Act_StatusI
 
+    | Act_VpShiftX
+
 type buffer = {
     file: string;
     lines: string list;
@@ -43,6 +45,9 @@ let buffer_of_file file =
         file = file;
         lines = String.split_on_char '\n' content;
     }
+type act_info = {
+    mutable vp_shift: int;
+}
 type editor = {
     buffer: buffer;
     viewport: viewport;
@@ -56,6 +61,8 @@ type editor = {
     mutable status_len: int;
     mutable status_start: int;
     mutable status_row: int;
+
+    act_info: act_info;
 }
 
 let cursor_to cy cx = Printf.printf "\027[%d;%dH%!" cy cx
@@ -101,14 +108,8 @@ let read_bytes () =
     (Bytes.get buf 0, Bytes.get buf 1, Bytes.get buf 2, Bytes.get buf 3, Bytes.get buf 4)
 
 let read_char () =
-  let b1, b2, _, _, _ = read_bytes () in
-  if b1 = '\027' then
-    if b2 = '[' || b2 = 'O' then
-      '\000'
-    else
-      b1
-  else
-    b1
+    let b1, b2, _, _, _ = read_bytes () in
+    if b1 = '\027' && ( b2 = '[' || b2 = 'O' ) then ( '\000', '\000' ) else ( b1, b2 )
 
 let string_of_mode mode = match mode with
 | Mode_Jmp -> "JMP"
@@ -134,12 +135,16 @@ let draw_status edtr =
     edtr.status_row <- new_status_row
 
 let draw_viewport edtr = 
-    for i=1 to snd edtr.size - 1 do
+    for i=1 to snd edtr.size  do
         let real_line = (i - 1) + edtr.viewport.top in
         let content = if real_line > List.length edtr.buffer.lines - 1 then "" else ( List.nth edtr.buffer.lines real_line) in
         cursor_to i 1;
         print_string "\027[K";
-        print_endline (try String.sub content edtr.viewport.left (String.length content - edtr.viewport.left - (if i= snd edtr.size - 1 then (edtr.status_start) else 0)) with | Invalid_argument _ -> "")
+        let foc = try String.sub content edtr.viewport.left (String.length content - edtr.viewport.left - (if i= snd edtr.size - 1 then (edtr.status_start) else 0)) with | Invalid_argument _ -> "" in
+        print_string (foc);
+        let crnt_vp = try String.length content / String.length foc with | Division_by_zero -> 0 in
+        if edtr.act_info.vp_shift < crnt_vp then edtr.act_info.vp_shift <- crnt_vp
+        
     done
 
 let draw edtr = 
@@ -151,17 +156,18 @@ let draw edtr =
 
 let handle_jmp_ev ev = 
     match ev with
-    | 'w' -> Act_MovUp
-    | 'a' -> Act_MovLeft
-    | 's' -> Act_MovDown
-    | 'd' -> Act_MovRight
-    | 'q' -> Act_Quit
-    | 'i' -> Act_StatusI
-    | '\027' -> Act_ModeSwitch (Mode_Edt)
-    | _ -> Act_NONE
+    | 'w', '\000' -> Act_MovUp
+    | 'a', '\000'-> Act_MovLeft
+    | 's', '\000' -> Act_MovDown
+    | 'd', '\000' -> Act_MovRight
+    | 'q', '\000' -> Act_Quit
+    | 'i', '\000' -> Act_StatusI
+    | '\027', '\000' -> Act_ModeSwitch (Mode_Edt)
+    | '\027', 'l' -> Act_VpShiftX
+    | _, _ -> Act_NONE
 
 let handle_edit_ev ev = 
-    match ev with
+    match fst ev with
     | '\000' -> Act_NONE
     | '\027' -> Act_ModeSwitch (Mode_Jmp)
     | '\n' -> Act_AddNewline
@@ -193,10 +199,14 @@ let run edtr =
         match action with
         | Act_Quit -> raise Break
         | Act_MovUp -> (
-            if not (edtr.cy = 1) then edtr.cy <- edtr.cy - 1
+            if not (edtr.cy = 1) then edtr.cy <- edtr.cy - 1 else (
+                if not (edtr.viewport.top = 0) then ( edtr.viewport.top <- edtr.viewport.top - 1 )
+            )
         )
         | Act_MovDown -> (
-            if edtr.cy < snd edtr.size then edtr.cy <- edtr.cy + 1
+            if edtr.cy < snd edtr.size then edtr.cy <- edtr.cy + 1 else (
+                ( edtr.viewport.top <- edtr.viewport.top + 1 )
+            )
         )
         | Act_MovRight -> (
             edtr.cx <- edtr.cx + 1
@@ -239,11 +249,15 @@ let () =
 
     let buffer = buffer_of_file !file in
 
+    let act_info = {
+        vp_shift = 0;
+    } in
+
     let size = ANSITerminal.size () in
     let edtr = {
         viewport = viewport_of_ctx buffer size;
-        buffer = buffer;
-        size = size;
+        buffer;
+        size;
         cx = 1;
         cy = 1;
         mode = Mode_Jmp;
@@ -251,6 +265,8 @@ let () =
         status_len = 0;
         status_start = fst size;
         status_row = snd size;
+
+        act_info;
     } in
 
     Sys.set_signal Sys.sigwinch (Sys.Signal_handle (fun _ -> 
