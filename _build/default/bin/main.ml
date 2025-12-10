@@ -214,12 +214,12 @@ let run edtr =
         | Act_Quit -> raise Break
         | Act_MovUp -> (
             if not (edtr.cy = 1) then edtr.cy <- edtr.cy - 1 else (
-                if not (edtr.viewport.top = 0) then ( edtr.viewport.top <- edtr.viewport.top - 1; edtr.act_info.vp_shift <- 0; )
+                if not (edtr.viewport.top = 0) && edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top - 1; edtr.act_info.vp_shift <- 0; )
             )
         )
         | Act_MovDown -> (
             if edtr.cy < snd edtr.size then edtr.cy <- edtr.cy + 1 else (
-                ( edtr.viewport.top <- edtr.viewport.top + 1; edtr.act_info.vp_shift <- 0; )
+                if edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top + 1; edtr.act_info.vp_shift <- 0; )
             ) 
         )
         | Act_MovRight -> (
