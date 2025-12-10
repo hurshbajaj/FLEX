@@ -4,6 +4,26 @@ open Unix
 
 exception Break
 
+type logger = {
+    oc: out_channel;
+    lock: Mutex.t;
+}
+let get_logger file = 
+    let oc = open_out file in
+    {
+        oc;
+        lock = Mutex.create ()
+    }
+let log loggr content = 
+    Mutex.lock loggr.lock;
+    output_string loggr.oc (content^"\n");
+    flush loggr.oc;
+    Mutex.unlock loggr.lock
+
+let logger_done loggr = 
+    Mutex.lock loggr.lock;
+    close_out loggr.oc
+
 type mode = Mode_Edt | Mode_Jmp
 type action = 
     | Act_MovUp | Act_MovDown | Act_MovLeft | Act_MovRight 
@@ -190,6 +210,8 @@ let handle_ev mode ev =
 
 
 let run edtr =
+    let loggr = get_logger "flex.log" in
+    log loggr "Running Editor";
     let fd = stdin in
     let old = tcgetattr fd in
 
@@ -199,6 +221,7 @@ let run edtr =
     
     try 
     while true do (
+        log loggr "YAY";
         draw edtr;
 
         if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap);
@@ -254,9 +277,9 @@ let run edtr =
         | _ -> ()
 
     )done;
-    with e -> (if not ( e = Break ) then ( (cleanup fd old); raise e));
+    with e -> (if not ( e = Break ) then ( (cleanup fd old); logger_done loggr; raise e));
 
-    cleanup fd old
+    cleanup fd old; logger_done loggr
 
 let () = 
     let argc = Array.length Sys.argv in
