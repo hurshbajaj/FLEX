@@ -6,12 +6,14 @@ exception Break
 
 type logger = {
     oc: out_channel;
+    file: string;
     lock: Mutex.t;
 }
 let get_logger file = 
     let oc = open_out file in
     {
         oc;
+        file;
         lock = Mutex.create ()
     }
 let log loggr content = 
@@ -22,6 +24,7 @@ let log loggr content =
 
 let logger_done loggr = 
     Mutex.lock loggr.lock;
+    let _ = open_out loggr.file in
     close_out loggr.oc
 
 type mode = Mode_Edt | Mode_Jmp
@@ -211,7 +214,7 @@ let handle_ev mode ev =
 
 let run edtr =
     let loggr = get_logger "flex.log" in
-    log loggr "Running Editor";
+    log loggr "\nRunning Editor - - - - - - - - - - - - - - - - - - - - ";
     let fd = stdin in
     let old = tcgetattr fd in
 
