@@ -211,7 +211,7 @@ let handle_ev mode ev =
 
 let run edtr =
     let loggr = get_logger "flex.log" in
-    log loggr "Running Editor";
+    log loggr "Running Editor - - - - - - - - - - - - - - - - - - - - ";
     let fd = stdin in
     let old = tcgetattr fd in
 
