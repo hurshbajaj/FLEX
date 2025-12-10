@@ -2,4 +2,5 @@
   (public_name flex)
   (name main)
   (libraries flex unix ANSITerminal)
+  (flags (:standard -g))
  )

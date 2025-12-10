@@ -27,6 +27,8 @@ let logger_done loggr =
     let _ = open_out loggr.file in
     close_out loggr.oc
 
+let loggr = get_logger "flex.log"
+
 type mode = Mode_Edt | Mode_Jmp
 type action = 
     | Act_MovUp | Act_MovDown | Act_MovLeft | Act_MovRight 
@@ -177,7 +179,7 @@ let draw_viewport edtr =
         let crnt_vp = try ( max 0 (  (String.length content - 1) / fst edtr.size ) ) with | Division_by_zero -> 0 in
         if edtr.act_info.vp_shift < crnt_vp then edtr.act_info.vp_shift <- crnt_vp
         
-    done
+    done 
 
 let draw edtr = 
     draw_viewport edtr;
@@ -213,7 +215,6 @@ let handle_ev mode ev =
 
 
 let run edtr =
-    let loggr = get_logger "flex.log" in
     log loggr "\nRunning Editor - - - - - - - - - - - - - - - - - - - - ";
     let fd = stdin in
     let old = tcgetattr fd in
@@ -228,7 +229,7 @@ let run edtr =
 
         if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap);
 
-        let real_length_ = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 ) in
+        let real_length_ = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
         if ( edtr.cx > real_length_) then edtr.cx <- real_length_;
 
         draw edtr;
@@ -243,6 +244,8 @@ let run edtr =
             )
         )
         | Act_MovDown -> (
+            let eof = (min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy) ) ) with Invalid_argument _ -> 1 | Failure nth -> 0 )) = 0 in
+            if not eof then
             if edtr.cy < snd edtr.size then edtr.cy <- edtr.cy + 1 else (
                 if edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top + 1; edtr.act_info.vp_shift <- 0; )
             ) 
