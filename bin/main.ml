@@ -32,7 +32,7 @@ let loggr = get_logger "flex.log"
 type mode = Mode_Edt | Mode_Jmp
 type action = 
     | Act_MovUp | Act_MovDown | Act_MovLeft | Act_MovRight 
-    | Act_PageDown | Act_PageUp
+    | Act_PageDown | Act_PageUp | Act_EoL | Act_BoL
     | Act_Quit 
     | Act_RepLast
     | Act_NONE 
@@ -214,6 +214,8 @@ let handle_jmp_ev ev =
     | 'd', '\000' -> Act_MovRight
     | 'q', '\000' -> Act_Quit
     | 'i', '\000' -> Act_StatusI
+    | 'l', '\000' -> Act_BoL
+    | '\027', 'l' -> Act_EoL
     | '\027', ' ' -> Act_ModeSwitch (Mode_Edt)
     | '\027', ';' -> Act_VpShiftX
     | '\027', 'i' -> Act_ToggleStatus
@@ -235,16 +237,13 @@ let handle_ev mode ev =
     | Mode_Edt -> handle_edit_ev ev
 
 let rec eval_act action edtr = 
-    if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap);
 
     let real_length_ = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
-    if ( edtr.cx > real_length_) then edtr.cx <- real_length_;
-
-    draw edtr;
-        
+    let real_length_trim = min (fst edtr.size) ( try max 1 ( String.length ( String.trim ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
+ 
     if not (action = Act_RepLast) then last_act := action;
 
-    match action with
+    (match action with
         | Act_Quit -> raise Break
         | Act_MovUp -> (
             if not (edtr.cy = 1) then edtr.cy <- edtr.cy - 1 else (
@@ -265,7 +264,9 @@ let rec eval_act action edtr =
             if not (edtr.cx = 1) then edtr.cx <- edtr.cx - 1 
         )
         | Act_ModeSwitch mode -> (
-            edtr.mode <- mode
+            if mode = Mode_Edt then edtr.cx <- edtr.cx + 1;
+            if edtr.mode = Mode_Edt then edtr.cx <- max 1 (edtr.cx - 1 );
+            edtr.mode <- mode;
         )
         | Act_AddChar c -> (
             cursor_to edtr.cy edtr.cx;
@@ -290,7 +291,16 @@ let rec eval_act action edtr =
         | Act_RepLast -> eval_act !last_act edtr
         | Act_PageUp -> edtr.viewport.top <- max 0 (edtr.viewport.top - snd edtr.size); edtr.cx <- 1; edtr.cy <- 1
         | Act_PageDown -> edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size
+        | Act_EoL -> edtr.cx <- real_length_
+        | Act_BoL -> edtr.cx <- real_length_ - real_length_trim + 1
         | _ -> ()
+    );
+    let real_length_ = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
+    if (edtr.mode) = Mode_Edt then (
+        if ( edtr.cx > real_length_+1) then edtr.cx <- real_length_
+    )else if ( edtr.cx > real_length_+1) then edtr.cx <- real_length_;
+    if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap);
+    draw edtr
 
 let run edtr =
     log loggr "\nRunning Editor - - - - - - - - - - - - - - - - - - - - ";
