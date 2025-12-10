@@ -32,7 +32,9 @@ let loggr = get_logger "flex.log"
 type mode = Mode_Edt | Mode_Jmp
 type action = 
     | Act_MovUp | Act_MovDown | Act_MovLeft | Act_MovRight 
+    | Act_PageDown | Act_PageUp
     | Act_Quit 
+    | Act_RepLast
     | Act_NONE 
     | Act_ModeSwitch of mode
     | Act_AddChar of char | Act_AddNewline
@@ -40,6 +42,7 @@ type action =
     | Act_StatusI | Act_ToggleStatus
 
     | Act_VpShiftX  
+let last_act = ref Act_NONE
 
 type buffer = {
     file: string;
@@ -149,7 +152,7 @@ let string_of_mode mode = match mode with
 let rgb r g b text = Printf.sprintf "\027[38;2;%d;%d;%dm%s\027[0m" r g b text
 
 let draw_status edtr = 
-    let content = if edtr.status.status_i = 0 then ( string_of_mode (edtr.mode) ) else (Printf.sprintf "%d : %d | %s" edtr.cy edtr.cx (Printf.sprintf "%s / %s" (Filename.basename ( Filename.dirname (Unix.realpath edtr.buffer.file))) edtr.buffer.file)) in
+    let content = if edtr.status.status_i = 0 then ( string_of_mode (edtr.mode) ) else (Printf.sprintf "%d : %d | %s" (edtr.viewport.top + edtr.cy) (edtr.viewport.left + edtr.cx) (Printf.sprintf "%s / %s" (Filename.basename ( Filename.dirname (Unix.realpath edtr.buffer.file))) edtr.buffer.file)) in
 
     cursor_to edtr.status.status_row edtr.status.status_start;
     Printf.printf "%s" (String.make edtr.status.status_len ' ');
@@ -173,20 +176,35 @@ let draw_viewport edtr =
         cursor_to i 1;
         print_string "\027[K";
         let foc_ = try String.sub content edtr.viewport.left (String.length content - edtr.viewport.left ) with | Invalid_argument _ -> "" in
-        let foc = if i = snd edtr.size && String.length foc_ > edtr.status.status_start - edtr.status.gap then ( edtr.status.overlap <- true; String.sub foc_ 0 (edtr.status.status_start - edtr.status.gap) ) else (edtr.status.overlap <- false; foc_ ) in
-        print_string (foc);
+        
+        let max_len = 
+            if i = snd edtr.size then 
+                edtr.status.status_start - edtr.status.gap
+            else 
+                fst edtr.size
+        in
+        
+        let foc = 
+            if String.length foc_ > max_len then (
+                if i = snd edtr.size then edtr.status.overlap <- true;
+                String.sub foc_ 0 max_len
+            ) else (
+                if i = snd edtr.size then edtr.status.overlap <- false;
+                foc_
+            )
+        in
+        print_string foc;
 
         let crnt_vp = try ( max 0 (  (String.length content - 1) / fst edtr.size ) ) with | Division_by_zero -> 0 in
         if edtr.act_info.vp_shift < crnt_vp then edtr.act_info.vp_shift <- crnt_vp
         
-    done 
+    done
 
 let draw edtr = 
     draw_viewport edtr;
     if edtr.status.toggled then ( draw_status edtr);
     cursor_to edtr.cy edtr.cx;
     flush Stdlib.stdout
-
 
 let handle_jmp_ev ev = 
     match ev with
@@ -199,11 +217,14 @@ let handle_jmp_ev ev =
     | '\027', ' ' -> Act_ModeSwitch (Mode_Edt)
     | '\027', ';' -> Act_VpShiftX
     | '\027', 'i' -> Act_ToggleStatus
+    | '\027', 'w' -> Act_PageUp
+    | '\027', 's' -> Act_PageDown
+    | '.', '\000' -> Act_RepLast
     | _, _ -> Act_NONE
 
 let handle_edit_ev ev = 
     match ev with
-    | '\000', '\000' -> Act_NONE
+    | '\000', _ -> Act_NONE
     | '\027', c -> (match c with | ' ' ->  Act_ModeSwitch (Mode_Jmp) | 'i' -> Act_ToggleStatus | _ -> Act_NONE)
     | '\n', '\000' -> Act_AddNewline
     | c, _ -> Act_AddChar c 
@@ -213,30 +234,17 @@ let handle_ev mode ev =
     | Mode_Jmp -> handle_jmp_ev ev
     | Mode_Edt -> handle_edit_ev ev
 
+let rec eval_act action edtr = 
+    if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap);
 
-let run edtr =
-    log loggr "\nRunning Editor - - - - - - - - - - - - - - - - - - - - ";
-    let fd = stdin in
-    let old = tcgetattr fd in
+    let real_length_ = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
+    if ( edtr.cx > real_length_) then edtr.cx <- real_length_;
 
-    raw_mode fd;
-    alt_screen 1;
-    clear ();
-    
-    try 
-    while true do (
-        draw edtr;
+    draw edtr;
+        
+    if not (action = Act_RepLast) then last_act := action;
 
-        if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap);
-
-        let real_length_ = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
-        if ( edtr.cx > real_length_) then edtr.cx <- real_length_;
-
-        draw edtr;
-            
-        let action = handle_ev edtr.mode ( read_char () ) in
-
-        match action with
+    match action with
         | Act_Quit -> raise Break
         | Act_MovUp -> (
             if not (edtr.cy = 1) then edtr.cy <- edtr.cy - 1 else (
@@ -277,10 +285,27 @@ let run edtr =
             edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size)
         )
         | Act_ToggleStatus -> (
-            if edtr.status.toggled then (edtr.status.toggled <- false; edtr.status.gap <- 0) else (edtr.status.toggled <- true; edtr.status.gap <- edtr.status.gap_);
+            if edtr.status.toggled then (edtr.status.toggled <- false; edtr.status.gap <- 0) else (edtr.status.toggled <- true; edtr.status.gap <- edtr.status.gap_)
         )
+        | Act_RepLast -> eval_act !last_act edtr
+        | Act_PageUp -> edtr.viewport.top <- max 0 (edtr.viewport.top - snd edtr.size); edtr.cx <- 1; edtr.cy <- 1
+        | Act_PageDown -> edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size
         | _ -> ()
 
+let run edtr =
+    log loggr "\nRunning Editor - - - - - - - - - - - - - - - - - - - - ";
+    let fd = stdin in
+    let old = tcgetattr fd in
+
+    raw_mode fd;
+    alt_screen 1;
+    clear ();
+    
+    try 
+    while true do (
+        draw edtr;
+        let action = handle_ev edtr.mode ( read_char () ) in
+        eval_act action edtr;
     )done;
     with e -> (if not ( e = Break ) then ( (cleanup fd old); logger_done loggr; raise e));
 
