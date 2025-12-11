@@ -31,7 +31,6 @@ let loggr = get_logger "flex.log"
 
 type mode = Mode_Edt | Mode_Jmp
 
-type pending_action = P_Act_Kill
 type action = 
     | Act_MovUp | Act_MovDown | Act_MovLeft | Act_MovRight 
     | Act_PageDown | Act_PageUp | Act_EoL | Act_BoL
@@ -45,7 +44,7 @@ type action =
 
     | Act_VpShiftX  
 
-    | Act_Pending of pending_action
+    | Act_Pending of char
     | Act_KillLine
 let last_act = ref Act_NONE
 
@@ -95,7 +94,7 @@ type editor = {
     mutable cy: int;
 
     mutable mode: mode;
-    mutable pending: pending_action option;
+    mutable pending: char option;
 
     status: status;
 
@@ -242,6 +241,11 @@ let draw edtr =
 let handle_jmp_ev ev edtr = 
     match ev with
     | 'l', '\000' when (is_some edtr.pending) -> edtr.pending <- None; Act_KillLine
+    | c, '\000' when (is_some edtr.pending) -> (
+        match edtr.pending with 
+        | Some cc -> if cc = c then edtr.pending <- None; Act_NONE 
+        | None -> Act_NONE
+    )
 
     | 'w', '\000' -> Act_MovUp
     | 'a', '\000'-> Act_MovLeft
@@ -257,7 +261,7 @@ let handle_jmp_ev ev edtr =
     | '\027', 'w' -> Act_PageUp
     | '\027', 's' -> Act_PageDown
     | '.', '\000' -> Act_RepLast
-    | 'k', '\000' -> Act_Pending (P_Act_Kill)
+    | 'k', '\000' -> Act_Pending 'k'
     | _, _ -> Act_NONE
 
 let handle_edit_ev ev = 
@@ -371,7 +375,7 @@ let rec eval_act action edtr =
 let update_cursor_style edtr = 
     match edtr.mode with
     | Mode_Edt -> print_string "\027[6 q"
-    | Mode_Jmp -> if not (is_some edtr.pending ) then print_string "\027[3 q" else print_string "\027[3 q"
+    | Mode_Jmp -> if not (is_some edtr.pending ) then print_string "\027[2 q" else print_string "\027[3 q"
 
 let run edtr =
     log loggr "\nRunning Editor - - - - - - - - - - - - - - - - - - - - ";
