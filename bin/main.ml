@@ -162,9 +162,6 @@ let insert_buf s idx ch =
   | Some ch -> String.sub s 0 idx ^ String.make 1 ch ^ String.sub s idx (len - idx)
   | None -> String.sub s 0 (idx-1) ^ String.sub s idx (len - idx)
 
-let cursor_reset () = print_string "\027[2 q"
-let cursor_blink () = print_string "\027[1 q"
-
 let rgb r g b text = Printf.sprintf "\027[38;2;%d;%d;%dm%s\027[0m" r g b text
 let is_some = function
   | Some _ -> true
@@ -244,7 +241,7 @@ let draw edtr =
 
 let handle_jmp_ev ev edtr = 
     match ev with
-    | 'l', '\000' when (is_some edtr.pending) -> edtr.pending <- None; cursor_reset (); Act_KillLine
+    | 'l', '\000' when (is_some edtr.pending) -> edtr.pending <- None; Act_KillLine
 
     | 'w', '\000' -> Act_MovUp
     | 'a', '\000'-> Act_MovLeft
@@ -360,7 +357,7 @@ let rec eval_act action edtr =
         | Act_PageDown -> edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size
         | Act_EoL -> edtr.cx <- real_length_
         | Act_BoL -> edtr.cx <- real_length_ - real_length_trim + 1
-        | Act_Pending act -> cursor_blink (); edtr.pending <- Some act
+        | Act_Pending act -> edtr.pending <- Some act
         | Act_KillLine -> if edtr.cy > 1 then edtr.cy <- edtr.cy - 1; edtr.buffer.lines <- lst_remove_at (edtr.viewport.top + edtr.cy - 1) edtr.buffer.lines 
         | _ -> ()
     );
@@ -371,6 +368,11 @@ let rec eval_act action edtr =
     if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap);
     draw edtr
 
+let update_cursor_style edtr = 
+    match edtr.mode with
+    | Mode_Edt -> print_string "\027[6 q"
+    | Mode_Jmp -> if not (is_some edtr.pending ) then print_string "\027[3 q" else print_string "\027[3 q"
+
 let run edtr =
     log loggr "\nRunning Editor - - - - - - - - - - - - - - - - - - - - ";
     let fd = stdin in
@@ -378,10 +380,11 @@ let run edtr =
 
     raw_mode fd;
     alt_screen 1;
-    clear (); cursor_reset ();
+    clear (); 
     
     try 
     while true do (
+        update_cursor_style edtr;
         edtr.act_info.vp_shift <- 0;
         draw edtr;
         let action = handle_ev edtr.mode ( read_char () ) edtr in
