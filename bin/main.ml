@@ -30,6 +30,8 @@ let logger_done loggr =
 let loggr = get_logger "flex.log"
 
 type mode = Mode_Edt | Mode_Jmp
+
+type pending_action = P_Act_Kill
 type action = 
     | Act_MovUp | Act_MovDown | Act_MovLeft | Act_MovRight 
     | Act_PageDown | Act_PageUp | Act_EoL | Act_BoL
@@ -37,16 +39,19 @@ type action =
     | Act_RepLast
     | Act_NONE 
     | Act_ModeSwitch of mode
-    | Act_AddChar of char | Act_AddNewline
+    | Act_AddChar of char | Act_RemChar | Act_AddNewline
 
     | Act_StatusI | Act_ToggleStatus
 
     | Act_VpShiftX  
+
+    | Act_Pending of pending_action
+    | Act_KillLine
 let last_act = ref Act_NONE
 
 type buffer = {
     file: string;
-    lines: string list;
+    mutable lines: string list;
 }
 type viewport = {
     mutable top: int;
@@ -88,7 +93,9 @@ type editor = {
     mutable size: int * int;
     mutable cx: int;
     mutable cy: int;
+
     mutable mode: mode;
+    mutable pending: pending_action option;
 
     status: status;
 
@@ -149,25 +156,54 @@ let string_of_mode mode = match mode with
 | Mode_Jmp -> "JMP"
 | Mode_Edt -> "EDT"
 
+let insert_buf s idx ch =
+  let len = String.length s in
+  match ch with
+  | Some ch -> String.sub s 0 idx ^ String.make 1 ch ^ String.sub s idx (len - idx)
+  | None -> String.sub s 0 (idx-1) ^ String.sub s idx (len - idx)
+
+let cursor_reset () = print_string "\027[2 q"
+let cursor_blink () = print_string "\027[1 q"
+
 let rgb r g b text = Printf.sprintf "\027[38;2;%d;%d;%dm%s\027[0m" r g b text
+let is_some = function
+  | Some _ -> true
+  | None -> false
 
-let draw_status edtr = 
-    let content = if edtr.status.status_i = 0 then ( string_of_mode (edtr.mode) ) else (Printf.sprintf "%d : %d | %s" (edtr.viewport.top + edtr.cy) (edtr.viewport.left + edtr.cx) (Printf.sprintf "%s / %s" (Filename.basename ( Filename.dirname (Unix.realpath edtr.buffer.file))) edtr.buffer.file)) in
-
-    cursor_to edtr.status.status_row edtr.status.status_start;
-    Printf.printf "%s" (String.make edtr.status.status_len ' ');
-    
-    let new_status_len = String.length content + 5 in
-    let new_status_start = fst(edtr.size) - new_status_len + 1 in
-    let new_status_row = snd edtr.size in
-    let highlight = rgb 212 118 215 in
-    
-    cursor_to new_status_row ( new_status_start - (if edtr.status.overlap then 2 else 0) ) ;
-    Printf.printf "%s" (ANSITerminal.sprintf [ANSITerminal.Bold] "%s" (if edtr.status.overlap then (highlight "| ") else "") ^ content ^  (highlight " <~"));
-    
-    edtr.status.status_len <- new_status_len;
-    edtr.status.status_start <- new_status_start;
-    edtr.status.status_row <- new_status_row
+let draw_status edtr =
+  let highlight = rgb 212 118 215 in
+  let has_pending = is_some edtr.pending in
+  let mode_str = string_of_mode edtr.mode in
+  
+  let content, visual_len = if edtr.status.status_i = 0 then
+    let base = mode_str in
+    let visual = (if has_pending then 2 else 0) + String.length base in
+    let display = (if has_pending then (highlight "* ") else "") ^ base in
+    (display, visual)
+  else
+    let text = Printf.sprintf "%d : %d | %s" 
+      (edtr.viewport.top + edtr.cy) 
+      (edtr.viewport.left + edtr.cx)
+      (Printf.sprintf "%s / %s" 
+        (Filename.basename (Filename.dirname (Unix.realpath edtr.buffer.file)))
+        edtr.buffer.file) in
+    (text, String.length text)
+  in
+  
+  cursor_to edtr.status.status_row edtr.status.status_start;
+  Printf.printf "%s" (String.make edtr.status.status_len ' ');
+  
+  let new_status_len = visual_len + 5 in
+  let new_status_start = fst(edtr.size) - new_status_len + 1 in
+  let new_status_row = snd edtr.size in
+  
+  cursor_to new_status_row (new_status_start - (if edtr.status.overlap then 2 else 0));
+  Printf.printf "%s" (ANSITerminal.sprintf [ANSITerminal.Bold] "%s" 
+    (if edtr.status.overlap then (highlight "| ") else "") ^ content ^ (highlight " <~"));
+  
+  edtr.status.status_len <- new_status_len;
+  edtr.status.status_start <- new_status_start;
+  edtr.status.status_row <- new_status_row
 
 let draw_viewport edtr = 
     for i=1 to snd edtr.size  do
@@ -206,8 +242,10 @@ let draw edtr =
     cursor_to edtr.cy edtr.cx;
     flush Stdlib.stdout
 
-let handle_jmp_ev ev = 
+let handle_jmp_ev ev edtr = 
     match ev with
+    | 'l', '\000' when (is_some edtr.pending) -> edtr.pending <- None; cursor_reset (); Act_KillLine
+
     | 'w', '\000' -> Act_MovUp
     | 'a', '\000'-> Act_MovLeft
     | 's', '\000' -> Act_MovDown
@@ -222,19 +260,36 @@ let handle_jmp_ev ev =
     | '\027', 'w' -> Act_PageUp
     | '\027', 's' -> Act_PageDown
     | '.', '\000' -> Act_RepLast
+    | 'k', '\000' -> Act_Pending (P_Act_Kill)
     | _, _ -> Act_NONE
 
 let handle_edit_ev ev = 
     match ev with
     | '\000', _ -> Act_NONE
-    | '\027', c -> (match c with | ' ' ->  Act_ModeSwitch (Mode_Jmp) | 'i' -> Act_ToggleStatus | _ -> Act_NONE)
+    | '\027', c -> (match c with | ' ' ->  Act_ModeSwitch (Mode_Jmp) | 'i' -> Act_ToggleStatus | 'a' -> Act_MovLeft | 'd' -> Act_MovRight |  _ -> Act_NONE)
+    | '\127', '\000' -> Act_RemChar
     | '\n', '\000' -> Act_AddNewline
     | c, _ -> Act_AddChar c 
 
-let handle_ev mode ev = 
+let handle_ev mode ev edtr = 
     match mode with
-    | Mode_Jmp -> handle_jmp_ev ev
+    | Mode_Jmp -> handle_jmp_ev ev edtr
     | Mode_Edt -> handle_edit_ev ev
+
+let lst_replace_at i x lst =
+  let rec aux idx = function
+    | [] -> []
+    | _ :: tl when idx = i -> x :: tl
+    | hd :: tl -> hd :: aux (idx + 1) tl
+  in
+  aux 0 lst
+
+let lst_remove_at idx lst =
+  let rec aux i = function
+    | [] -> []
+    | _ :: tl when i = idx -> tl
+    | hd :: tl -> hd :: aux (i + 1) tl
+  in aux 0 lst
 
 let rec eval_act action edtr = 
 
@@ -247,31 +302,43 @@ let rec eval_act action edtr =
         | Act_Quit -> raise Break
         | Act_MovUp -> (
             if not (edtr.cy = 1) then edtr.cy <- edtr.cy - 1 else (
-                if not (edtr.viewport.top = 0) && edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top - 1; edtr.act_info.vp_shift <- 0; )
+                if not (edtr.viewport.top = 0) && edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top - 1)
             )
         )
         | Act_MovDown -> (
             let eof = (min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy) ) ) with Invalid_argument _ -> 1 | Failure nth -> 0 )) = 0 in
             if not eof then
             if edtr.cy < snd edtr.size then edtr.cy <- edtr.cy + 1 else (
-                if edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top + 1; edtr.act_info.vp_shift <- 0; )
+                if edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top + 1)
             ) 
         )
         | Act_MovRight -> (
-            if not ( edtr.cx >= real_length_) then edtr.cx <- edtr.cx + 1;
+            edtr.cx <- edtr.cx + 1;
         )
         | Act_MovLeft -> (
             if not (edtr.cx = 1) then edtr.cx <- edtr.cx - 1 
         )
         | Act_ModeSwitch mode -> (
+            (*
             if mode = Mode_Edt then edtr.cx <- edtr.cx + 1;
             if edtr.mode = Mode_Edt then edtr.cx <- max 1 (edtr.cx - 1 );
+            *)
             edtr.mode <- mode;
         )
         | Act_AddChar c -> (
             cursor_to edtr.cy edtr.cx;
-            print_char_a (int_of_char c );
+            let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
+            let line_ = insert_buf line (edtr.cx-1) (Some c) in
+            edtr.buffer.lines <- lst_replace_at (edtr.viewport.top + edtr.cy - 1) line_ edtr.buffer.lines;
             edtr.cx <- edtr.cx + 1
+        )
+        | Act_RemChar -> (
+            if edtr.cx > 1 then
+            cursor_to edtr.cy edtr.cx;
+            let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
+            let line_ = insert_buf line (edtr.cx-1) None in
+            edtr.buffer.lines <- lst_replace_at (edtr.viewport.top + edtr.cy - 1) line_ edtr.buffer.lines;
+            edtr.cx <- edtr.cx - 1
         )
         | Act_AddNewline -> 
             if edtr.cy < snd edtr.size then (
@@ -293,12 +360,14 @@ let rec eval_act action edtr =
         | Act_PageDown -> edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size
         | Act_EoL -> edtr.cx <- real_length_
         | Act_BoL -> edtr.cx <- real_length_ - real_length_trim + 1
+        | Act_Pending act -> cursor_blink (); edtr.pending <- Some act
+        | Act_KillLine -> if edtr.cy > 1 then edtr.cy <- edtr.cy - 1; edtr.buffer.lines <- lst_remove_at (edtr.viewport.top + edtr.cy - 1) edtr.buffer.lines 
         | _ -> ()
     );
     let real_length_ = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
     if (edtr.mode) = Mode_Edt then (
-        if ( edtr.cx > real_length_+1) then edtr.cx <- real_length_
-    )else if ( edtr.cx > real_length_+1) then edtr.cx <- real_length_;
+        if ( edtr.cx > real_length_+1) then edtr.cx <- real_length_+1
+    )else if ( edtr.cx > real_length_) then edtr.cx <- real_length_;
     if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap);
     draw edtr
 
@@ -309,12 +378,13 @@ let run edtr =
 
     raw_mode fd;
     alt_screen 1;
-    clear ();
+    clear (); cursor_reset ();
     
     try 
     while true do (
+        edtr.act_info.vp_shift <- 0;
         draw edtr;
-        let action = handle_ev edtr.mode ( read_char () ) in
+        let action = handle_ev edtr.mode ( read_char () ) edtr in
         eval_act action edtr;
     )done;
     with e -> (if not ( e = Break ) then ( (cleanup fd old); logger_done loggr; raise e));
@@ -355,6 +425,7 @@ let () =
         mode = Mode_Jmp;
         status;
         act_info;
+        pending = None;
     } in
 
     Sys.set_signal Sys.sigwinch (Sys.Signal_handle (fun _ -> 
