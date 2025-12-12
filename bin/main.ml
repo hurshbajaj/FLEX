@@ -306,6 +306,10 @@ let handle_jmp_ev ev edtr =
             | 'i' -> Act_ToggleStatus
             | 'w' -> Act_PageUp
             | 's' -> Act_PageDown
+            | '\n' -> Act_Seq [| 
+                Act_InsertLine (edtr.cy + edtr.viewport.top - 1, ""); 
+                ( Act_ModeSwitch Mode_Edt ) 
+            |]
             | _ -> if not (c = '\027') then edtr.pending <- Some ""; Act_NONE
     )
 
