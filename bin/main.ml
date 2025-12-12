@@ -32,6 +32,8 @@ type action =
     | Act_KillLine | Act_InsertLine of int * string
     | Act_CenterLine of int
 
+    | Act_ToBufferTop | Act_ToBufferBottom
+
 type buffer = {
     file: string;
     mutable lines: string list;
@@ -113,6 +115,8 @@ let viewport_of_ctx buffer size =
         top = 0;
         left = 0;
     }
+
+let real_length edtr = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 )
 
 (* -> BUF *)
 
@@ -312,7 +316,13 @@ let handle_jmp_ev ev edtr =
             |]
             | _ -> if not (c = '\027') then edtr.pending <- Some ""; Act_NONE
     )
-
+    | c when (Some " " = edtr.pending) -> (
+        edtr.pending <- None;
+        match c with 
+            | ';' -> Act_ToBufferTop
+            | '\'' -> Act_ToBufferBottom
+            | _ -> if not (c = '\027' || c = ' ') then edtr.pending <- Some ""; Act_NONE
+    )
     | 'w' -> Act_MovUp
     | 'a' ->  Act_MovLeft
     | 's' -> Act_MovDown
@@ -329,12 +339,18 @@ let handle_jmp_ev ev edtr =
     | 'k' -> Act_Pending "k"
     | 'c' -> Act_Pending "c"
     | '\027' -> Act_Pending ""
+    | ' ' -> Act_Pending " "
     | _ -> Act_NONE
 
 let handle_edit_ev ev edtr = 
     match ev with
     | '\000' -> Act_NONE
-    | c when Some "" = edtr.pending -> (edtr.pending <- None; match c with | ' ' ->  Act_ModeSwitch (Mode_Jmp) | 'i' -> Act_ToggleStatus | 'a' -> Act_MovLeft | 'd' -> Act_MovRight |  _ -> Act_NONE)
+    | c when Some "" = edtr.pending -> (edtr.pending <- None; match c with 
+        | ' ' ->  Act_ModeSwitch (Mode_Jmp) 
+        | 'i' -> Act_ToggleStatus 
+        | 'a' -> Act_MovLeft | 'd' -> Act_MovRight  | 'w' -> Act_MovUp | 's' -> Act_MovDown
+        |  _ -> Act_NONE
+    )
     | '\027' -> Act_Pending ""
     | '\127' -> Act_RemChar
     | '\n' -> Act_AddNewline
@@ -346,7 +362,7 @@ let handle_ev mode ev edtr =
     | Mode_Edt -> handle_edit_ev ev edtr
 
 let rec eval_act action edtr = 
-    let real_length_ = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
+    let real_length_ = real_length edtr in
     let real_length_trim = min (fst edtr.size) ( try max 1 ( String.length ( String.trim ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
  
     if not (action = Act_RepLast) then last_act := action;
@@ -453,9 +469,18 @@ let rec eval_act action edtr =
         | Act_Seq seq -> for i=0 to Array.length seq - 1 do
             eval_act seq.(i) edtr
         done
+        | Act_ToBufferTop -> (
+            edtr.viewport.top <- 0;
+            edtr.cy <- 1; edtr.cx <- 1
+        )
+        | Act_ToBufferBottom -> (
+            edtr.viewport.top <- max (List.length edtr.buffer.lines - snd edtr.size) 1;
+            edtr.cy <- List.length edtr.buffer.lines - edtr.viewport.top;
+            edtr.cx <- real_length edtr
+        )
         | _ -> ()
     );
-    let real_length_ = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
+    let real_length_ = real_length edtr in
     if (edtr.mode) = Mode_Edt then (
         if ( edtr.cx > real_length_+1) then edtr.cx <- real_length_+1
     )else if ( edtr.cx > real_length_) then edtr.cx <- real_length_;
