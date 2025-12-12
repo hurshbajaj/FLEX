@@ -26,7 +26,7 @@ type action =
 
     | Act_VpShiftX  
 
-    | Act_Pending of char
+    | Act_Pending of string
     | Act_Undo
     | Act_KillLine | Act_InsertLine of int * string
     | Act_CenterLine of int
@@ -66,7 +66,7 @@ type editor = {
     mutable cy: int;
 
     mutable mode: mode;
-    mutable pending: char option;
+    mutable pending: string option;
 
     status: status;
 
@@ -181,35 +181,9 @@ let clear () =
     print_string "\027[2J\027[H";
     flush Stdlib.stdout
 
-(* CHARS & BYTES *)
-
-let print_char_a b =
-    if b >= 32 && b <= 126 then
-        print_char (char_of_int b)
-    else
-        () 
-
-let safe_read fd buf pos len =
-    let rec aux () =
-        try
-            read fd buf pos len
-    with
-    | Unix.Unix_error (Unix.EINTR, _, _) -> aux ()
-    in
-    aux ()
-
-let read_bytes () = 
-    let buf = Bytes.create 5 in
-    let _ = safe_read stdin buf 0 5 in
-    (Bytes.get buf 0, Bytes.get buf 1, Bytes.get buf 2, Bytes.get buf 3, Bytes.get buf 4)
-
-let read_char () =
-    let b1, b2, _, _, _ = read_bytes () in
-    if b1 = '\027' && ( b2 = '[' || b2 = 'O' ) then ( '\000', '\000' ) else (if b1 = '\027' then ( let bn, _, _, _, _ = read_bytes () in ( b1, bn ) ) else (b1, '\000') )
+(* DRAW *)
 
 let rgb r g b text = Printf.sprintf "\027[38;2;%d;%d;%dm%s\027[0m" r g b text
-
-(* DRAW *)
 
 let draw_status edtr =
     let highlight = rgb 212 118 215 in
@@ -218,8 +192,8 @@ let draw_status edtr =
 
     let content, visual_len = if edtr.status.status_i = 0 then
         let base = mode_str in
-        let visual = (if has_pending then 2 else 0) + String.length base in
-        let display = (if has_pending then (highlight "* ") else "") ^ base in
+        let visual = (if has_pending then 2+(match edtr.pending with Some c -> String.length c | None -> 0) else 0) + String.length base in
+        let display = (if has_pending then (highlight ((match edtr.pending with Some c -> c | None -> "") ^ "* ")) else "") ^ base in
         (display, visual)
         else
             let text = Printf.sprintf "%d : %d | %s" 
@@ -284,49 +258,82 @@ let draw edtr =
     cursor_to edtr.cy edtr.cx;
     flush Stdlib.stdout
 
+(* CHARS & BYTES *)
+
+let print_intChar b = print_char (char_of_int b)
+
+let safe_read fd buf pos len =
+    let rec aux () =
+        try
+            read fd buf pos len
+    with
+    | Unix.Unix_error (Unix.EINTR, _, _) -> aux ()
+    in
+    aux ()
+
+let read_char edtr : char = 
+    let buf = Bytes.create 5 in
+    let _ = safe_read stdin buf 0 5 in
+    let b1 = Bytes.get buf 0 in let b2 =  Bytes.get buf 1 in
+    if b1 = '\027' && ( b2 = '[' || b2 = 'O' ) then 
+        ( '\000') else 
+            b1
+
 (* ACTION HANDLING *)
 
 let handle_jmp_ev ev edtr = 
     match ev with
-    | 'l', '\000' when (Some 'k' = edtr.pending) -> edtr.pending <- None; Act_KillLine
-    | 'x', '\000' when (Some 'c' = edtr.pending) -> edtr.pending <- None; Act_CenterLine (edtr.viewport.top + edtr.cy - 1)
-    | c, '\000' when (is_some edtr.pending) -> (
-        match edtr.pending with 
-        | Some cc -> if cc = c then edtr.pending <- None; Act_NONE 
-        | None -> Act_NONE
+    | c when (Some "k" = edtr.pending) -> (
+        edtr.pending <- None;
+        match c with 
+            | 'l' -> Act_KillLine
+            | _ -> if not (c = '\027' || c = 'l') then edtr.pending <- Some ""; Act_NONE
+    )
+    | c when (Some "c" = edtr.pending) -> (
+        edtr.pending <- None;
+        match c with 
+            | 'x' -> Act_CenterLine (edtr.viewport.top + edtr.cy - 1)
+            | _ -> if not (c = '\027' || c = 'c') then edtr.pending <- Some ""; Act_NONE
+    )
+    | c when (Some "" = edtr.pending) -> (
+        edtr.pending <- None;
+        match c with 
+            | 'l' -> Act_EoL
+            | ' ' -> Act_ModeSwitch (Mode_Edt)
+            | ';' -> Act_VpShiftX
+            | 'i' -> Act_ToggleStatus
+            | 'w' -> Act_PageUp
+            | 's' -> Act_PageDown
+            | _ -> if not (c = '\027') then edtr.pending <- Some ""; Act_NONE
     )
 
-    | 'w', '\000' -> Act_MovUp
-    | 'a', '\000'-> Act_MovLeft
-    | 's', '\000' -> Act_MovDown
-    | 'd', '\000' -> Act_MovRight
-    | 'q', '\000' -> Act_Quit
-    | 'i', '\000' -> Act_StatusI
-    | 'l', '\000' -> Act_BoL
-    | 'u', '\000' -> Act_Undo
-    | '\027', 'l' -> Act_EoL
-    | '\027', ' ' -> Act_ModeSwitch (Mode_Edt)
-    | '\027', ';' -> Act_VpShiftX
-    | '\027', 'i' -> Act_ToggleStatus
-    | '\027', 'w' -> Act_PageUp
-    | '\027', 's' -> Act_PageDown
-    | '.', '\000' -> Act_RepLast
-    | 'k', '\000' -> Act_Pending 'k'
-    | 'c', '\000' -> Act_Pending 'c'
-    | _, _ -> Act_NONE
+    | 'w' -> Act_MovUp
+    | 'a' ->  Act_MovLeft
+    | 's' -> Act_MovDown
+    | 'd' -> Act_MovRight
+    | 'q' -> Act_Quit
+    | 'i' -> Act_StatusI
+    | 'l' -> Act_BoL
+    | 'u' -> Act_Undo
+    | '.' -> Act_RepLast
+    | 'k' -> Act_Pending "k"
+    | 'c' -> Act_Pending "c"
+    | '\027' -> Act_Pending ""
+    | _ -> Act_NONE
 
-let handle_edit_ev ev = 
+let handle_edit_ev ev edtr = 
     match ev with
-    | '\000', _ -> Act_NONE
-    | '\027', c -> (match c with | ' ' ->  Act_ModeSwitch (Mode_Jmp) | 'i' -> Act_ToggleStatus | 'a' -> Act_MovLeft | 'd' -> Act_MovRight |  _ -> Act_NONE)
-    | '\127', '\000' -> Act_RemChar
-    | '\n', '\000' -> Act_AddNewline
-    | c, _ -> Act_AddChar c 
+    | '\000' -> Act_NONE
+    | c when Some "" = edtr.pending -> (edtr.pending <- None; match c with | ' ' ->  Act_ModeSwitch (Mode_Jmp) | 'i' -> Act_ToggleStatus | 'a' -> Act_MovLeft | 'd' -> Act_MovRight |  _ -> Act_NONE)
+    | '\027' -> Act_Pending ""
+    | '\127' -> Act_RemChar
+    | '\n' -> Act_AddNewline
+    | c -> Act_AddChar c 
 
 let handle_ev mode ev edtr = 
     match mode with
     | Mode_Jmp -> handle_jmp_ev ev edtr
-    | Mode_Edt -> handle_edit_ev ev
+    | Mode_Edt -> handle_edit_ev ev edtr
 
 let rec eval_act action edtr = 
     let real_length_ = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
@@ -406,7 +413,6 @@ let rec eval_act action edtr =
         | Act_CenterLine line -> (
             let atline = edtr.viewport.top + edtr.cy in
             let fTOP = ( ( edtr.cy )  - (snd edtr.size/2) ) + edtr.viewport.top in
-            log loggr ( string_of_int fTOP);
             edtr.viewport.top <- min ( max 0 fTOP)  ( List.length edtr.buffer.lines - snd edtr.size ); 
             edtr.cy <- atline - edtr.viewport.top
         )
@@ -435,7 +441,7 @@ let run edtr =
         update_cursor_style edtr;
         edtr.act_info.vp_shift <- 0;
         draw edtr;
-        let action = handle_ev edtr.mode ( read_char () ) edtr in
+        let action = handle_ev edtr.mode ( read_char edtr ) edtr in
         eval_act action edtr;
     )done;
     with e -> (if not ( e = Break ) then ( (cleanup fd old); logger_done loggr; raise e));
