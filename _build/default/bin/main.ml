@@ -29,6 +29,7 @@ type action =
     | Act_Pending of char
     | Act_Undo
     | Act_KillLine | Act_InsertLine of int * string
+    | Act_CenterLine of int
 
 type buffer = {
     file: string;
@@ -287,7 +288,8 @@ let draw edtr =
 
 let handle_jmp_ev ev edtr = 
     match ev with
-    | 'l', '\000' when (is_some edtr.pending) -> edtr.pending <- None; Act_KillLine
+    | 'l', '\000' when (Some 'k' = edtr.pending) -> edtr.pending <- None; Act_KillLine
+    | 'x', '\000' when (Some 'c' = edtr.pending) -> edtr.pending <- None; Act_CenterLine (edtr.viewport.top + edtr.cy - 1)
     | c, '\000' when (is_some edtr.pending) -> (
         match edtr.pending with 
         | Some cc -> if cc = c then edtr.pending <- None; Act_NONE 
@@ -310,6 +312,7 @@ let handle_jmp_ev ev edtr =
     | '\027', 's' -> Act_PageDown
     | '.', '\000' -> Act_RepLast
     | 'k', '\000' -> Act_Pending 'k'
+    | 'c', '\000' -> Act_Pending 'c'
     | _, _ -> Act_NONE
 
 let handle_edit_ev ev = 
@@ -400,6 +403,13 @@ let rec eval_act action edtr =
         )
         | Act_Undo -> eval_act (try (List.hd edtr.undo_lst) with _ -> Act_NONE) edtr; edtr.undo_lst <- ( try ( List.tl edtr.undo_lst) with | _ -> [] )
         | Act_InsertLine (line_no, content) -> log loggr content; edtr.buffer.lines <- lst_insert_at line_no content edtr.buffer.lines
+        | Act_CenterLine line -> (
+            let atline = edtr.viewport.top + edtr.cy in
+            let fTOP = ( ( edtr.cy )  - (snd edtr.size/2) ) + edtr.viewport.top in
+            log loggr ( string_of_int fTOP);
+            edtr.viewport.top <- min ( max 0 fTOP)  ( List.length edtr.buffer.lines - snd edtr.size ); 
+            edtr.cy <- atline - edtr.viewport.top
+        )
         | _ -> ()
     );
     let real_length_ = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
