@@ -455,8 +455,8 @@ let rec eval_act action edtr =
                 edtr.cy <- (line_no + 1) - edtr.viewport.top; 
                 edtr.cx <- 1;
             ) else (
-                edtr.viewport.top <- line_no; 
-                edtr.cy <- 1;
+                edtr.viewport.top <- edtr.viewport.top + 1; 
+                edtr.cy <- snd edtr.size;
                 edtr.cx <- 1
             )
         )
