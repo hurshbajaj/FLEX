@@ -494,7 +494,7 @@ let rec eval_act action edtr =
         | Act_Undo -> eval_act (try (List.hd edtr.undo_lst) with _ -> Act_NONE) edtr; edtr.undo_lst <- ( try ( List.tl edtr.undo_lst) with | _ -> [] )
         | Act_InsertLine (line_no, content) -> (
             edtr.buffer.lines <- lst_insert_at line_no content edtr.buffer.lines;
-            cx_into_vp edtr (line_no + 3);
+            cx_into_vp edtr (line_no + 1);
             edtr.cx <- 1
         )
         | Act_CenterLine line -> (
