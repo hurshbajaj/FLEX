@@ -434,7 +434,9 @@ let rec eval_act action edtr =
             let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
             let line_ = insert_str line (edtr.cx-1) (Some (String.make 1 c)) in
             edtr.buffer.lines <- lst_replace_at (edtr.viewport.top + edtr.cy - 1) line_ edtr.buffer.lines;
-            if c = ' ' then (adjust_InsertAddUndo edtr (edtr.viewport.top + edtr.cy - 1) (edtr.viewport.left +  edtr.cx - 1); close_CharStr edtr ) else adjust_InsertAddUndo edtr (edtr.viewport.top + edtr.cy - 1) (edtr.viewport.left +  edtr.cx - 1);
+            if c = ' ' then 
+                ( close_CharStr edtr; (adjust_InsertAddUndo edtr (edtr.viewport.top + edtr.cy - 1) (edtr.viewport.left +  edtr.cx - 1) ) )
+            else adjust_InsertAddUndo edtr (edtr.viewport.top + edtr.cy - 1) (edtr.viewport.left +  edtr.cx - 1);
             edtr.cx <- edtr.cx + 1
         )
         | Act_RmCharStr (l, strt, len, _) -> 
