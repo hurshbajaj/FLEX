@@ -159,15 +159,11 @@ let lst_insert_at idx str lst =
 
 let cursor_to cy cx = Printf.printf "\027[%d;%dH%!" cy cx
 let into_vp edtr line_no = 
-    log loggr (Printf.sprintf "LINE NUMBER -> %d | EDTR TOP -> %d | Y SIZE -> %d" line_no edtr.viewport.top (snd edtr.size) );
     if line_no < edtr.viewport.top then (
-        log loggr "Shifting Up";
         edtr.viewport.top <- line_no; 
     ) else if line_no > edtr.viewport.top + snd edtr.size then (
-        log loggr "Shifting Down";
         edtr.viewport.top <- max 0 (line_no - snd edtr.size); 
-    ) else log loggr "Looks right";
-    log loggr "- - - - - - - "
+    ) 
 let update_cursor_style edtr = 
     match edtr.mode with
     | Mode_Edt -> if not (is_some edtr.pending ) then print_string "\027[6 q" else print_string "\027[3 q"
@@ -366,7 +362,7 @@ let handle_edit_ev ev edtr =
     | '\027' -> Act_Pending ""
     | '\127' -> Act_RmChar
     | '\n' -> Act_I_InsertLine
-    | c -> Act_AddChar c 
+    | c -> log loggr "calling"; Act_AddChar c 
 
 let handle_ev mode ev edtr = 
     match mode with
@@ -375,25 +371,25 @@ let handle_ev mode ev edtr =
 
 let close_CharStr edtr = 
     match (try (List.hd edtr.undo_lst) with | _ -> Act_NONE) with
-    | Act_RmCharStr (l, x, y, z) -> edtr.undo_lst <- (Act_RmCharStr (l, x, y, false))::(List.tl edtr.undo_lst)
+    | Act_RmCharStr (l, x, y, z) -> edtr.undo_lst <- (Act_RmCharStr (l, x, y, false))::(try List.tl edtr.undo_lst with _ -> [])
     | _ -> ()
 
 let adjust_InsertAddUndo edtr line idx = 
     match (try (List.hd edtr.undo_lst) with | _ -> Act_NONE) with
     | Act_RmCharStr (l, start_idx, len, we) -> (
         if we then 
-            edtr.undo_lst <- (Act_RmCharStr (l, start_idx, (len+1), true ))::(List.tl edtr.undo_lst)
+            edtr.undo_lst <- (Act_RmCharStr (l, start_idx, (len+1), true ))::(try List.tl edtr.undo_lst with _ -> [])
         else 
-            edtr.undo_lst <- (Act_RmCharStr (l, idx, 1, true ))::(List.tl edtr.undo_lst)
+            edtr.undo_lst <- (Act_RmCharStr (l, idx, 1, true ))::(try List.tl edtr.undo_lst with _ -> [])
     )
-    | _ ->  edtr.undo_lst <- (Act_RmCharStr (line, idx, 1, true ))::(List.tl edtr.undo_lst)
+    | _ ->  edtr.undo_lst <- (Act_RmCharStr (line, idx, 1, true ))::(try List.tl edtr.undo_lst with _ -> [])
 
 let rec eval_act action edtr = 
     let real_length_ = real_length edtr in
     let real_length_trim = min (fst edtr.size) ( try max 1 ( String.length ( String.trim ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
  
     if not (action = Act_RepLast) then last_act := action;
-    match action with | Act_AddChar _ -> () | _ -> close_CharStr edtr;
+    (match action with | Act_AddChar _ -> () | _ -> close_CharStr edtr);
 
     (match action with
         | Act_Quit -> raise Break
@@ -423,12 +419,12 @@ let rec eval_act action edtr =
             edtr.mode <- mode;
         )
         | Act_AddChar c -> (
-            cursor_to edtr.cy edtr.cx;
+            log loggr ("Char to add -> " ^ String.make 1 c);
             let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
             let line_ = insert_str line (edtr.cx-1) (Some (String.make 1 c)) in
             edtr.buffer.lines <- lst_replace_at (edtr.viewport.top + edtr.cy - 1) line_ edtr.buffer.lines;
             edtr.cx <- edtr.cx + 1;
-            adjust_InsertAddUndo edtr (edtr.viewport.top + edtr.cy - 1) edtr.cx
+            adjust_InsertAddUndo edtr (edtr.viewport.top + edtr.cy - 1) (edtr.viewport.left +  edtr.cx)
         )
         | Act_RmCharStr (line, start, len, _) -> ()
         | Act_RmChar -> (
@@ -458,7 +454,6 @@ let rec eval_act action edtr =
             edtr.buffer.lines <- lst_insert_at (edtr.viewport.top + edtr.cy) after edtr.buffer.lines;
 
             let pre_vtop = edtr.viewport.top in
-            log loggr ( Printf.sprintf "BRINGING INTO VIEWPORT -> %d" (edtr.cy + edtr.viewport.top ) );
             into_vp edtr (edtr.cy + edtr.viewport.top + 1);
             if edtr.viewport.top = pre_vtop then edtr.cy <- edtr.cy + 1 else if edtr.viewport.top > pre_vtop then edtr.cy <- snd edtr.size else edtr.cy <- 1; edtr.cx <- 1
         )
