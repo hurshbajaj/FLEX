@@ -21,7 +21,7 @@ type action =
     | Act_NONE 
     | Act_Seq of action array
     | Act_ModeSwitch of mode
-    | Act_AddChar of char | Act_RmChar | Act_I_InsertLine
+    | Act_AddChar of char | Act_I_RmChar | Act_I_InsertLine
 
     | Act_StatusI | Act_ToggleStatus
 
@@ -377,7 +377,7 @@ let handle_edit_ev ev edtr =
         |  _ -> Act_NONE
     )
     | '\027' -> Act_Pending ""
-    | '\127' -> Act_RmChar
+    | '\127' -> Act_I_RmChar
     | '\n' -> Act_I_InsertLine
     | c ->  Act_AddChar c 
 
@@ -411,7 +411,8 @@ let update_undo_lst edtr act = match act with
 | Act_KillLine line_no -> (
     edtr.undo_lst <- Act_InsertLine (line_no, List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1)) :: edtr.undo_lst;
 )
-| Act_InsertLine (line_no , _) -> log loggr "UNDO INSERTED"; edtr.undo_lst <- ( (Act_KillLine (line_no)) :: edtr.undo_lst )
+| Act_InsertLine (line_no , _) -> edtr.undo_lst <- ( (Act_KillLine (line_no)) :: edtr.undo_lst )
+| Act_I_InsertLine ->  edtr.undo_lst <- ( (Act_KillLine (edtr.viewport.top + edtr.cy - 1)) :: edtr.undo_lst )
 | _ -> ()
 
 let rec eval_act action edtr = 
@@ -491,7 +492,7 @@ let rec eval_act action edtr =
             edtr.buffer.lines <- lst_replace_at (edtr.viewport.top + edtr.cy - 1) line_ edtr.buffer.lines;
             edtr.cx <- edtr.cx + 1
         )
-        | Act_RmChar -> (
+        | Act_I_RmChar -> (
             if edtr.cx > 1 then (
             cursor_to edtr.cy edtr.cx;
             let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
