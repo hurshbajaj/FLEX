@@ -21,7 +21,7 @@ type action =
     | Act_NONE 
     | Act_Seq of action array
     | Act_ModeSwitch of mode
-    | Act_AddChar of char | Act_RemChar | Act_AddNewline
+    | Act_AddChar of char | Act_RmChar | Act_I_InsertLine
 
     | Act_StatusI | Act_ToggleStatus
 
@@ -33,6 +33,8 @@ type action =
     | Act_CenterLine of int
 
     | Act_ToBufferTop | Act_ToBufferBottom
+
+    | Act_RmCharStr of int * int * int * bool (* start idx, length, W.E. *)
 
 type buffer = {
     file: string;
@@ -156,6 +158,16 @@ let lst_insert_at idx str lst =
     in aux 0 lst
 
 let cursor_to cy cx = Printf.printf "\027[%d;%dH%!" cy cx
+let into_vp edtr line_no = 
+    log loggr (Printf.sprintf "LINE NUMBER -> %d | EDTR TOP -> %d | Y SIZE -> %d" line_no edtr.viewport.top (snd edtr.size) );
+    if line_no < edtr.viewport.top then (
+        log loggr "Shifting Up";
+        edtr.viewport.top <- line_no; 
+    ) else if line_no > edtr.viewport.top + snd edtr.size then (
+        log loggr "Shifting Down";
+        edtr.viewport.top <- max 0 (line_no - snd edtr.size); 
+    ) else log loggr "Looks right";
+    log loggr "- - - - - - - "
 let update_cursor_style edtr = 
     match edtr.mode with
     | Mode_Edt -> if not (is_some edtr.pending ) then print_string "\027[6 q" else print_string "\027[3 q"
@@ -352,8 +364,8 @@ let handle_edit_ev ev edtr =
         |  _ -> Act_NONE
     )
     | '\027' -> Act_Pending ""
-    | '\127' -> Act_RemChar
-    | '\n' -> Act_AddNewline
+    | '\127' -> Act_RmChar
+    | '\n' -> Act_I_InsertLine
     | c -> Act_AddChar c 
 
 let handle_ev mode ev edtr = 
@@ -361,11 +373,27 @@ let handle_ev mode ev edtr =
     | Mode_Jmp -> handle_jmp_ev ev edtr
     | Mode_Edt -> handle_edit_ev ev edtr
 
+let close_CharStr edtr = 
+    match (try (List.hd edtr.undo_lst) with | _ -> Act_NONE) with
+    | Act_RmCharStr (l, x, y, z) -> edtr.undo_lst <- (Act_RmCharStr (l, x, y, false))::(List.tl edtr.undo_lst)
+    | _ -> ()
+
+let adjust_InsertAddUndo edtr line idx = 
+    match (try (List.hd edtr.undo_lst) with | _ -> Act_NONE) with
+    | Act_RmCharStr (l, start_idx, len, we) -> (
+        if we then 
+            edtr.undo_lst <- (Act_RmCharStr (l, start_idx, (len+1), true ))::(List.tl edtr.undo_lst)
+        else 
+            edtr.undo_lst <- (Act_RmCharStr (l, idx, 1, true ))::(List.tl edtr.undo_lst)
+    )
+    | _ ->  edtr.undo_lst <- (Act_RmCharStr (line, idx, 1, true ))::(List.tl edtr.undo_lst)
+
 let rec eval_act action edtr = 
     let real_length_ = real_length edtr in
     let real_length_trim = min (fst edtr.size) ( try max 1 ( String.length ( String.trim ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
  
     if not (action = Act_RepLast) then last_act := action;
+    match action with | Act_AddChar _ -> () | _ -> close_CharStr edtr;
 
     (match action with
         | Act_Quit -> raise Break
@@ -399,9 +427,11 @@ let rec eval_act action edtr =
             let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
             let line_ = insert_str line (edtr.cx-1) (Some (String.make 1 c)) in
             edtr.buffer.lines <- lst_replace_at (edtr.viewport.top + edtr.cy - 1) line_ edtr.buffer.lines;
-            edtr.cx <- edtr.cx + 1
+            edtr.cx <- edtr.cx + 1;
+            adjust_InsertAddUndo edtr (edtr.viewport.top + edtr.cy - 1) edtr.cx
         )
-        | Act_RemChar -> (
+        | Act_RmCharStr (line, start, len, _) -> ()
+        | Act_RmChar -> (
             if edtr.cx > 1 then (
             cursor_to edtr.cy edtr.cx;
             let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
@@ -420,14 +450,17 @@ let rec eval_act action edtr =
             )
 
         )
-        | Act_AddNewline -> (
+        | Act_I_InsertLine -> (
             let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
             let before = String.sub line 0 (edtr.cx - 1) in
             let after = String.sub line (edtr.cx - 1) (String.length line - (edtr.cx - 1)) in
             edtr.buffer.lines <- lst_replace_at (edtr.viewport.top + edtr.cy - 1) before edtr.buffer.lines;
             edtr.buffer.lines <- lst_insert_at (edtr.viewport.top + edtr.cy) after edtr.buffer.lines;
-            edtr.cy <- edtr.cy + 1;
-            edtr.cx <- 1
+
+            let pre_vtop = edtr.viewport.top in
+            log loggr ( Printf.sprintf "BRINGING INTO VIEWPORT -> %d" (edtr.cy + edtr.viewport.top ) );
+            into_vp edtr (edtr.cy + edtr.viewport.top + 1);
+            if edtr.viewport.top = pre_vtop then edtr.cy <- edtr.cy + 1 else if edtr.viewport.top > pre_vtop then edtr.cy <- snd edtr.size else edtr.cy <- 1; edtr.cx <- 1
         )
         | Act_StatusI -> (
             if edtr.status.status_i = 0 then ( edtr.status.status_i <- 1 ) else ( edtr.status.status_i <- 0 )
@@ -451,14 +484,9 @@ let rec eval_act action edtr =
         | Act_Undo -> eval_act (try (List.hd edtr.undo_lst) with _ -> Act_NONE) edtr; edtr.undo_lst <- ( try ( List.tl edtr.undo_lst) with | _ -> [] )
         | Act_InsertLine (line_no, content) -> (
             edtr.buffer.lines <- lst_insert_at line_no content edtr.buffer.lines;
-            if line_no >= edtr.viewport.top && line_no < edtr.viewport.top + snd edtr.size then (
-                edtr.cy <- (line_no + 1) - edtr.viewport.top; 
-                edtr.cx <- 1;
-            ) else (
-                edtr.viewport.top <- edtr.viewport.top + 1; 
-                edtr.cy <- snd edtr.size;
-                edtr.cx <- 1
-            )
+            let pre_vtop = edtr.viewport.top in
+            into_vp edtr (line_no+3);
+            if edtr.viewport.top = pre_vtop then edtr.cy <- edtr.cy + 1 else if edtr.viewport.top > pre_vtop then edtr.cy <- snd edtr.size else edtr.cy <- 1; edtr.cx <- 1
         )
         | Act_CenterLine line -> (
             let atline = edtr.viewport.top + edtr.cy in
