@@ -392,9 +392,9 @@ let adjust_InsertAddUndo edtr line idx =
         if we then 
             edtr.undo_lst <- (Act_RmCharStr (l, start_idx, (len+1), true ))::(try List.tl edtr.undo_lst with _ -> [])
         else 
-            edtr.undo_lst <- (Act_RmCharStr (l, idx, 1, true ))::(try List.tl edtr.undo_lst with _ -> [])
+            edtr.undo_lst <- (Act_RmCharStr (l, idx, 1, true ))::edtr.undo_lst
     )
-    | _ ->  edtr.undo_lst <- (Act_RmCharStr (line, idx, 1, true ))::(try List.tl edtr.undo_lst with _ -> [])
+    | _ ->  edtr.undo_lst <- (Act_RmCharStr (line, idx, 1, true ))::edtr.undo_lst
 
 let rec eval_act action edtr = 
     let real_length_ = real_length edtr in
