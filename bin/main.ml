@@ -125,6 +125,12 @@ let viewport_of_ctx buffer size =
 
 let real_length edtr = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 )
 
+let adjust_inline_bounds edtr = 
+    let real_length_ = real_length edtr in
+    if (edtr.mode) = Mode_Edt then (
+        if ( edtr.cx > real_length_+1) then edtr.cx <- real_length_+1
+    )else if ( edtr.cx > real_length_) then edtr.cx <- real_length_;
+    if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap)
 (* -> BUF *)
 
 let buffer_of_file file = 
@@ -403,7 +409,30 @@ let rec eval_act action edtr =
     (match action with | Act_AddChar _ -> () | _ -> close_CharStr edtr);
 
     (match action with
-        | Act_Quit -> raise Break
+        (* META ACTIONS *)
+        | Act_Quit -> raise Break  
+        | Act_NONE -> ()
+
+        | Act_Undo -> eval_act (try (List.hd edtr.undo_lst) with _ -> Act_NONE) edtr; edtr.undo_lst <- ( try ( List.tl edtr.undo_lst) with | _ -> [] )
+        | Act_RepLast -> eval_act !last_act edtr
+
+        | Act_ModeSwitch mode -> (
+            (*
+            if mode = Mode_Edt then edtr.cx <- edtr.cx + 1;
+            if edtr.mode = Mode_Edt then edtr.cx <- max 1 (edtr.cx - 1 );
+            *)
+            edtr.mode <- mode;
+        )
+        | Act_Pending act -> edtr.pending <- Some act
+        | Act_Seq seq -> for i=0 to Array.length seq - 1 do
+            eval_act seq.(i) edtr
+        done
+
+        (* VISUAL *)
+        | Act_StatusI -> if edtr.status.status_i = 0 then ( edtr.status.status_i <- 1 ) else ( edtr.status.status_i <- 0 )
+        | Act_ToggleStatus -> if edtr.status.toggled then (edtr.status.toggled <- false; edtr.status.gap <- 0) else (edtr.status.toggled <- true; edtr.status.gap <- edtr.status.gap_) 
+
+        (* MOVEMENT *)
         | Act_MovUp -> (
             if not (edtr.cy = 1) then edtr.cy <- edtr.cy - 1 else (
                 if not (edtr.viewport.top = 0) && edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top - 1)
@@ -416,31 +445,37 @@ let rec eval_act action edtr =
                 if edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top + 1)
             ) 
         )
-        | Act_MovRight -> (
-            edtr.cx <- edtr.cx + 1;
+        | Act_MovRight -> edtr.cx <- edtr.cx + 1;
+        | Act_MovLeft -> if not (edtr.cx = 1) then edtr.cx <- edtr.cx - 1 
+
+        | Act_VpShiftX -> edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size)
+
+        | Act_PageUp -> edtr.viewport.top <- max 0 (edtr.viewport.top - snd edtr.size); edtr.cx <- 1; edtr.cy <- 1
+        | Act_PageDown -> edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size
+        | Act_EoL -> edtr.cx <- real_length_
+        | Act_BoL -> edtr.cx <- real_length_ - real_length_trim + 1
+        | Act_CenterLine line -> (
+            let atline = edtr.viewport.top + edtr.cy in
+            let fTOP = ( ( edtr.cy )  - (snd edtr.size/2) ) + edtr.viewport.top in
+            edtr.viewport.top <- min ( max 0 fTOP)  ( List.length edtr.buffer.lines - snd edtr.size ); 
+            edtr.cy <- atline - edtr.viewport.top
         )
-        | Act_MovLeft -> (
-            if not (edtr.cx = 1) then edtr.cx <- edtr.cx - 1 
+        | Act_ToBufferTop -> (
+            edtr.viewport.top <- 0;
+            edtr.cy <- 1; edtr.cx <- 1
         )
-        | Act_ModeSwitch mode -> (
-            (*
-            if mode = Mode_Edt then edtr.cx <- edtr.cx + 1;
-            if edtr.mode = Mode_Edt then edtr.cx <- max 1 (edtr.cx - 1 );
-            *)
-            edtr.mode <- mode;
+        | Act_ToBufferBottom -> (
+            edtr.viewport.top <- max (List.length edtr.buffer.lines - snd edtr.size) 1;
+            edtr.cy <- List.length edtr.buffer.lines - edtr.viewport.top;
+            edtr.cx <- real_length edtr
         )
+
+        (* INSERTION *)
         | Act_AddChar c -> (
             let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
             let line_ = insert_str line (edtr.cx-1) (Some (String.make 1 c)) in
             edtr.buffer.lines <- lst_replace_at (edtr.viewport.top + edtr.cy - 1) line_ edtr.buffer.lines;
             edtr.cx <- edtr.cx + 1
-        )
-        | Act_RmCharStr (l, strt, len, _) -> (
-            into_vp edtr l;
-            let line = List.nth edtr.buffer.lines (l) in
-            let line_ = remove_slice line strt len in 
-            edtr.buffer.lines <- lst_replace_at l line_ edtr.buffer.lines;
-            if not (l = (edtr.cy + edtr.viewport.top)) then edtr.cx <- strt+1
         )
         | Act_RmChar -> (
             if edtr.cx > 1 then (
@@ -461,6 +496,14 @@ let rec eval_act action edtr =
             )
 
         )
+        | Act_RmCharStr (l, strt, len, _) -> (
+            into_vp edtr l;
+            let line = List.nth edtr.buffer.lines (l) in
+            let line_ = remove_slice line strt len in 
+            edtr.buffer.lines <- lst_replace_at l line_ edtr.buffer.lines;
+            if not (l = (edtr.cy + edtr.viewport.top)) then edtr.cx <- strt+1
+        )
+
         | Act_I_InsertLine -> (
             let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
             let before = String.sub line 0 (edtr.cx - 1) in
@@ -472,56 +515,15 @@ let rec eval_act action edtr =
 
             edtr.cx <- String.length after + 1
         )
-        | Act_StatusI -> (
-            if edtr.status.status_i = 0 then ( edtr.status.status_i <- 1 ) else ( edtr.status.status_i <- 0 )
-        )
-        | Act_VpShiftX -> (
-            edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size)
-        )
-        | Act_ToggleStatus -> (
-            if edtr.status.toggled then (edtr.status.toggled <- false; edtr.status.gap <- 0) else (edtr.status.toggled <- true; edtr.status.gap <- edtr.status.gap_)
-        )
-        | Act_RepLast -> eval_act !last_act edtr
-        | Act_PageUp -> edtr.viewport.top <- max 0 (edtr.viewport.top - snd edtr.size); edtr.cx <- 1; edtr.cy <- 1
-        | Act_PageDown -> edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size
-        | Act_EoL -> edtr.cx <- real_length_
-        | Act_BoL -> edtr.cx <- real_length_ - real_length_trim + 1
-        | Act_Pending act -> edtr.pending <- Some act
-        | Act_KillLine -> ( 
-            edtr.buffer.lines <- lst_remove_at (edtr.viewport.top + edtr.cy - 1) edtr.buffer.lines; if edtr.cy+edtr.viewport.top - 1 >= List.length edtr.buffer.lines then edtr.cy <- edtr.cy - 1
-        )
-        | Act_Undo -> eval_act (try (List.hd edtr.undo_lst) with _ -> Act_NONE) edtr; edtr.undo_lst <- ( try ( List.tl edtr.undo_lst) with | _ -> [] )
         | Act_InsertLine (line_no, content) -> (
             edtr.buffer.lines <- lst_insert_at line_no content edtr.buffer.lines;
             cy_into_vp edtr (line_no + 1);
             edtr.cx <- 1
         )
-        | Act_CenterLine line -> (
-            let atline = edtr.viewport.top + edtr.cy in
-            let fTOP = ( ( edtr.cy )  - (snd edtr.size/2) ) + edtr.viewport.top in
-            edtr.viewport.top <- min ( max 0 fTOP)  ( List.length edtr.buffer.lines - snd edtr.size ); 
-            edtr.cy <- atline - edtr.viewport.top
-        )
-        | Act_Seq seq -> for i=0 to Array.length seq - 1 do
-            eval_act seq.(i) edtr
-        done
-        | Act_ToBufferTop -> (
-            edtr.viewport.top <- 0;
-            edtr.cy <- 1; edtr.cx <- 1
-        )
-        | Act_ToBufferBottom -> (
-            edtr.viewport.top <- max (List.length edtr.buffer.lines - snd edtr.size) 1;
-            edtr.cy <- List.length edtr.buffer.lines - edtr.viewport.top;
-            edtr.cx <- real_length edtr
-        )
-        | _ -> ()
+        | Act_KillLine -> edtr.buffer.lines <- lst_remove_at (edtr.viewport.top + edtr.cy - 1) edtr.buffer.lines; if edtr.cy+edtr.viewport.top - 1 >= List.length edtr.buffer.lines then edtr.cy <- edtr.cy - 1
     );
-    let real_length_ = real_length edtr in
-    if (edtr.mode) = Mode_Edt then (
-        if ( edtr.cx > real_length_+1) then edtr.cx <- real_length_+1
-    )else if ( edtr.cx > real_length_) then edtr.cx <- real_length_;
-    if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap);
-    draw edtr
+
+    adjust_inline_bounds edtr
 
 let update_undo_lst edtr act = match act with
 | Act_AddChar c ->  (
