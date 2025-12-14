@@ -284,11 +284,13 @@ let cy_into_vp edtr line_no =
     
     if buffer_line < edtr.viewport.top then (
         edtr.viewport.top <- buffer_line;
+        edtr.cy <- 1
     ) else if buffer_line >= edtr.viewport.top + snd edtr.size then (
+        log loggr "YES";
         edtr.viewport.top <- max 0 (buffer_line - (snd edtr.size) + 1);
         edtr.cy <- snd edtr.size  
     ) else (
-        edtr.cy <- buffer_line - edtr.viewport.top + 2
+        edtr.cy <- buffer_line - edtr.viewport.top + 1
     )
 
 (* CHARS & BYTES *)
@@ -533,11 +535,11 @@ let rec eval_act action edtr =
             );
         )
         | Act_RmCharStr (l, strt, len, _) -> (
-            cy_into_vp edtr l;
+            cy_into_vp edtr (l+1);
             let line = List.nth edtr.buffer.lines (l) in
             let line_ = remove_slice line strt len in 
             edtr.buffer.lines <- lst_replace_at l line_ edtr.buffer.lines;
-            edtr.cx <- strt
+            edtr.cx <- (strt)
         )
         | Act_AddCharStr (l, strt, _, content) -> ( 
             (*
@@ -548,7 +550,7 @@ let rec eval_act action edtr =
                 if i <> 0 then eval_act (Act_InsertLine ( (l+i), line_cntnt)) edtr
             )) cntnt_lst
             *)
-            cy_into_vp edtr (l); 
+            cy_into_vp edtr (l+1); 
             let cntnt_lst = String.split_on_char '\n' content in 
             if List.length cntnt_lst = 1 then
                 ( eval_act (Act_I_AddStr ( (List.hd cntnt_lst), (max 1 strt-1, l))) edtr; edtr.cx <- (strt - 1 + (String.length content)) )
@@ -570,7 +572,7 @@ let rec eval_act action edtr =
         )
         | Act_InsertLine (line_no, content) -> (
             edtr.buffer.lines <- lst_insert_at line_no content edtr.buffer.lines;
-            cy_into_vp edtr (line_no + 1);
+            cy_into_vp edtr (line_no+1);
             edtr.cx <- 1
         )
         | Act_KillLine (line_no) -> edtr.buffer.lines <- lst_remove_at line_no edtr.buffer.lines; if edtr.cy+edtr.viewport.top - 1 >= List.length edtr.buffer.lines then edtr.cy <- edtr.cy - 1
