@@ -281,7 +281,7 @@ let draw edtr =
     flush Stdlib.stdout
 
 let cy_into_vp edtr line_no = 
-    let buffer_line = line_no - 1 in  
+    let buffer_line = line_no in  
     
     if buffer_line < edtr.viewport.top then (
         edtr.viewport.top <- buffer_line;
@@ -483,7 +483,7 @@ let rec eval_act action edtr =
             edtr.mode <- mode;
         )
         | Act_Pending act -> edtr.pending <- Some act
-        | Act_Seq seq -> ( (* TODO UNDO HANDLER, 0 indexing*)
+        | Act_Seq seq -> ( 
             List.iter (fun act -> adjust_SeqUndo edtr act; eval_act act edtr) seq;
             close_SeqUndo edtr
         )
@@ -558,14 +558,14 @@ let rec eval_act action edtr =
             );
         )
         | Act_RmCharStr (l, strt, len, _) -> (
-            cy_into_vp edtr (l+1);
+            cy_into_vp edtr (l);
             let line = List.nth edtr.buffer.lines (l) in
             let line_ = remove_slice line strt len in 
             edtr.buffer.lines <- lst_replace_at l line_ edtr.buffer.lines;
             edtr.cx <- (strt)
         )
         | Act_AddCharStr (l, strt, _, content) -> ( 
-            cy_into_vp edtr (l+1); 
+            cy_into_vp edtr (l); 
             let cntnt_lst = String.split_on_char '\n' content in 
             if List.length cntnt_lst = 1 then
                 ( eval_act (Act_I_AddStr ( (List.hd cntnt_lst), (max 1 strt-1, l))) edtr; edtr.cx <- (strt - 1 + (String.length content)) )
@@ -581,13 +581,13 @@ let rec eval_act action edtr =
             edtr.buffer.lines <- lst_replace_at (edtr.viewport.top + edtr.cy - 1) before edtr.buffer.lines;
             edtr.buffer.lines <- lst_insert_at (edtr.viewport.top + edtr.cy) after edtr.buffer.lines;
             
-            cy_into_vp edtr (edtr.cy + edtr.viewport.top + 1);
+            cy_into_vp edtr (edtr.cy + edtr.viewport.top);
 
             edtr.cx <- 1
         )
         | Act_InsertLine (line_no, content) -> (
             edtr.buffer.lines <- lst_insert_at line_no content edtr.buffer.lines;
-            cy_into_vp edtr (line_no+1);
+            cy_into_vp edtr (line_no);
             edtr.cx <- 1
         )
         | Act_KillLine (line_no) -> edtr.buffer.lines <- lst_remove_at line_no edtr.buffer.lines; if edtr.cy+edtr.viewport.top - 1 >= List.length edtr.buffer.lines then edtr.cy <- edtr.cy - 1
