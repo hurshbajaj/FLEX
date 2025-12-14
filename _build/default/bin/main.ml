@@ -325,7 +325,7 @@ let handle_jmp_ev ev edtr =
         edtr.pending <- None;
         match c with 
             | 'x' -> Act_CenterLine (edtr.viewport.top + edtr.cy - 1)
-            | _ -> if c <> '\027' || c <> 'c' then edtr.pending <- Some ""; Act_NONE
+            | _ -> if c <> '\027' && c <> 'c' then edtr.pending <- Some ""; Act_NONE
     )
     | c when (Some "" = edtr.pending) -> (
         edtr.pending <- None;
@@ -347,7 +347,7 @@ let handle_jmp_ev ev edtr =
         match c with 
             | ';' -> Act_ToBufferTop
             | '\'' -> Act_ToBufferBottom
-            | _ -> if c <> '\027' || c <> ' ' then edtr.pending <- Some ""; Act_NONE
+            | _ -> if c <> '\027' && c <> ' ' then edtr.pending <- Some ""; Act_NONE
     )
     | 'w' -> Act_MovUp
     | 'a' ->  Act_MovLeft
@@ -412,7 +412,6 @@ let adjust_InsertRmUndo edtr line idx =
     | Act_AddCharStr (l, start_idx, we, content) -> (
         if we then (
             edtr.undo_lst <- (Act_AddCharStr (line, idx, true, ( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with | _ -> if line = 0 then "" else "\n") ^ content ))::(try List.tl edtr.undo_lst with _ -> []); 
-        log loggr (Printf.sprintf "Act_AddCharStr ( line: %d; idx: %d; content: %s )" line idx (( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with |  _ -> if line = 0 then "" else "\n") ^ content) )
         )
         else 
             edtr.undo_lst <- (Act_AddCharStr (l, idx, true, ( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with | _ -> "") ))::edtr.undo_lst
