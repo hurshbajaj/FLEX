@@ -129,7 +129,7 @@ let real_length edtr = min (fst edtr.size) ( try max 1 ( String.length ( List.nt
 let adjust_inline_bounds edtr = 
     let real_length_ = real_length edtr in
     if (edtr.mode) = Mode_Edt then (
-        if ( edtr.cx > real_length_+1) then edtr.cx <- real_length_+1
+        if ( edtr.cx > real_length_+1) then edtr.cx <- real_length_ + (if String.trim (List.nth edtr.buffer.lines (edtr.cy + edtr.viewport.top - 1)) = "" then 0 else 1)
     )else if ( edtr.cx > real_length_) then edtr.cx <- real_length_;
     if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap)
 (* -> BUF *)
@@ -347,7 +347,7 @@ let handle_jmp_ev ev edtr =
         match c with 
             | ';' -> Act_ToBufferTop
             | '\'' -> Act_ToBufferBottom
-            | _ -> if c <> '\027' && c <> ' ' then edtr.pending <- Some ""; Act_NONE
+            | _ -> if c <> '\027' && c <> ' ' then edtr.pending <- Some " "; Act_NONE
     )
     | 'w' -> Act_MovUp
     | 'a' ->  Act_MovLeft
