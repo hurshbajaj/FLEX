@@ -319,13 +319,13 @@ let handle_jmp_ev ev edtr =
         edtr.pending <- None;
         match c with 
             | 'l' -> Act_KillLine  (edtr.viewport.top + edtr.cy - 1)
-            | _ -> if not (c = '\027' || c = 'l') then edtr.pending <- Some ""; Act_NONE
+            | _ -> if c <> '\027' && c <> 'l' then edtr.pending <- Some ""; Act_NONE
     )
     | c when (Some "c" = edtr.pending) -> (
         edtr.pending <- None;
         match c with 
             | 'x' -> Act_CenterLine (edtr.viewport.top + edtr.cy - 1)
-            | _ -> if not (c = '\027' || c = 'c') then edtr.pending <- Some ""; Act_NONE
+            | _ -> if c <> '\027' || c <> 'c' then edtr.pending <- Some ""; Act_NONE
     )
     | c when (Some "" = edtr.pending) -> (
         edtr.pending <- None;
@@ -340,14 +340,14 @@ let handle_jmp_ev ev edtr =
                 Act_InsertLine (edtr.cy + edtr.viewport.top - 1, ""); 
                 ( Act_ModeSwitch Mode_Edt ) 
             |]
-            | _ -> if not (c = '\027') then edtr.pending <- Some ""; Act_NONE
+            | _ -> if c <> '\027' then edtr.pending <- Some ""; Act_NONE
     )
     | c when (Some " " = edtr.pending) -> (
         edtr.pending <- None;
         match c with 
             | ';' -> Act_ToBufferTop
             | '\'' -> Act_ToBufferBottom
-            | _ -> if not (c = '\027' || c = ' ') then edtr.pending <- Some ""; Act_NONE
+            | _ -> if c <> '\027' || c <> ' ' then edtr.pending <- Some ""; Act_NONE
     )
     | 'w' -> Act_MovUp
     | 'a' ->  Act_MovLeft
@@ -394,7 +394,7 @@ let close_RmCharStr edtr =
 
 let close_AddCharStr edtr = 
     match (try (List.hd edtr.undo_lst) with | _ -> Act_NONE) with
-    | Act_AddCharStr (l, x, z, c) -> edtr.undo_lst <- (Act_AddCharStr (l, x, false, c))::(try List.tl edtr.undo_lst with _ -> [])
+    | Act_AddCharStr (l, x, z, c) -> edtr.undo_lst <- if c <> "" then (Act_AddCharStr (l, x, false, c))::(try List.tl edtr.undo_lst with _ -> []) else (try List.tl edtr.undo_lst with _ -> [])
     | _ -> ()
 
 let adjust_InsertAddUndo edtr line idx = 
@@ -411,8 +411,8 @@ let adjust_InsertRmUndo edtr line idx =
     match (try (List.hd edtr.undo_lst) with | _ -> Act_NONE) with
     | Act_AddCharStr (l, start_idx, we, content) -> (
         if we then (
-            edtr.undo_lst <- (Act_AddCharStr (line, idx, true, ( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with | _ -> if line = 1 then "" else "\n") ^ content ))::(try List.tl edtr.undo_lst with _ -> []); 
-        log loggr (Printf.sprintf "Act_AddCharStr ( line: %d; idx: %d; content: %s )" line idx (( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with |  _ -> if line = 1 then "" else "\n") ^ content) )
+            edtr.undo_lst <- (Act_AddCharStr (line, idx, true, ( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with | _ -> if line = 0 then "" else "\n") ^ content ))::(try List.tl edtr.undo_lst with _ -> []); 
+        log loggr (Printf.sprintf "Act_AddCharStr ( line: %d; idx: %d; content: %s )" line idx (( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with |  _ -> if line = 0 then "" else "\n") ^ content) )
         )
         else 
             edtr.undo_lst <- (Act_AddCharStr (l, idx, true, ( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with | _ -> "") ))::edtr.undo_lst
@@ -440,7 +440,7 @@ let rec eval_act action edtr =
     let real_length_ = real_length edtr in
     let real_length_trim = min (fst edtr.size) ( try max 1 ( String.length ( String.trim ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
  
-    if not (action = Act_RepLast) then last_act := action;
+    if action <> Act_RepLast then last_act := action;
     (match action with | Act_I_AddChar _ -> () | _ -> close_RmCharStr edtr);
     (match action with | Act_I_RmChar | Act_KillLine _ -> () | _ -> close_AddCharStr edtr);
 
@@ -471,8 +471,8 @@ let rec eval_act action edtr =
 
         (* MOVEMENT *)
         | Act_MovUp -> (
-            if not (edtr.cy = 1) then edtr.cy <- edtr.cy - 1 else (
-                if not (edtr.viewport.top = 0) && edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top - 1)
+            if edtr.cy <> 1 then edtr.cy <- edtr.cy - 1 else (
+                if edtr.viewport.top <> 0 && edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top - 1)
             )
         )
         | Act_MovDown -> (
@@ -483,7 +483,7 @@ let rec eval_act action edtr =
             ) 
         )
         | Act_MovRight -> edtr.cx <- edtr.cx + 1;
-        | Act_MovLeft -> if not (edtr.cx = 1) then edtr.cx <- edtr.cx - 1 
+        | Act_MovLeft -> if edtr.cx <> 1 then edtr.cx <- edtr.cx - 1 
 
         | Act_VpShiftX -> edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size)
 
@@ -537,9 +537,17 @@ let rec eval_act action edtr =
             let line = List.nth edtr.buffer.lines (l) in
             let line_ = remove_slice line strt len in 
             edtr.buffer.lines <- lst_replace_at l line_ edtr.buffer.lines;
-            if not (l = (edtr.cy + edtr.viewport.top)) then edtr.cx <- strt+1
+            if l <> (edtr.cy + edtr.viewport.top) then edtr.cx <- strt+1
         )
         | Act_AddCharStr (l, strt, _, content) -> ( 
+            (*
+            let i_cntnt = ref (String.sub (List.nth edtr.buffer.lines l) 0 (strt)) in 
+            let cntnt_lst = String.split_on_char '\n' content in 
+            eval_act (Act_InsertLine ( (l), !i_cntnt ^ (List.hd cntnt_lst))) edtr;
+            List.iteri (fun i line_cntnt -> (
+                if i <> 0 then eval_act (Act_InsertLine ( (l+i), line_cntnt)) edtr
+            )) cntnt_lst
+            *)
         )
         | Act_I_InsertLine -> (
             let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
@@ -583,7 +591,7 @@ let run edtr =
         update_undo_lst edtr action;
         eval_act action edtr;
     )done;
-    with e -> (if not ( e = Break ) then ( (cleanup fd old); logger_done loggr; raise e));
+    with e -> (if  e <> Break then ( (cleanup fd old); logger_done loggr; raise e));
 
     cleanup fd old; logger_done loggr
 let () = 

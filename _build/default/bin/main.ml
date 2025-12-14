@@ -394,7 +394,7 @@ let close_RmCharStr edtr =
 
 let close_AddCharStr edtr = 
     match (try (List.hd edtr.undo_lst) with | _ -> Act_NONE) with
-    | Act_AddCharStr (l, x, z, c) -> edtr.undo_lst <- (Act_AddCharStr (l, x, false, c))::(try List.tl edtr.undo_lst with _ -> [])
+    | Act_AddCharStr (l, x, z, c) -> edtr.undo_lst <- if c <> "" then (Act_AddCharStr (l, x, false, c))::(try List.tl edtr.undo_lst with _ -> []) else (try List.tl edtr.undo_lst with _ -> [])
     | _ -> ()
 
 let adjust_InsertAddUndo edtr line idx = 
@@ -411,8 +411,8 @@ let adjust_InsertRmUndo edtr line idx =
     match (try (List.hd edtr.undo_lst) with | _ -> Act_NONE) with
     | Act_AddCharStr (l, start_idx, we, content) -> (
         if we then (
-            edtr.undo_lst <- (Act_AddCharStr (line, idx, true, ( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with | _ -> if line = 1 then "" else "\n") ^ content ))::(try List.tl edtr.undo_lst with _ -> []); 
-        log loggr (Printf.sprintf "Act_AddCharStr ( line: %d; idx: %d; content: %s )" line idx (( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with |  _ -> if line = 1 then "" else "\n") ^ content) )
+            edtr.undo_lst <- (Act_AddCharStr (line, idx, true, ( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with | _ -> if line = 0 then "" else "\n") ^ content ))::(try List.tl edtr.undo_lst with _ -> []); 
+        log loggr (Printf.sprintf "Act_AddCharStr ( line: %d; idx: %d; content: %s )" line idx (( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with |  _ -> if line = 0 then "" else "\n") ^ content) )
         )
         else 
             edtr.undo_lst <- (Act_AddCharStr (l, idx, true, ( try String.make 1 (List.nth edtr.buffer.lines line).[idx-1] with | _ -> "") ))::edtr.undo_lst
@@ -540,6 +540,14 @@ let rec eval_act action edtr =
             if not (l = (edtr.cy + edtr.viewport.top)) then edtr.cx <- strt+1
         )
         | Act_AddCharStr (l, strt, _, content) -> ( 
+            (*
+            let i_cntnt = ref (String.sub (List.nth edtr.buffer.lines l) 0 (strt)) in 
+            let cntnt_lst = String.split_on_char '\n' content in 
+            eval_act (Act_InsertLine ( (l), !i_cntnt ^ (List.hd cntnt_lst))) edtr;
+            List.iteri (fun i line_cntnt -> (
+                if i <> 0 then eval_act (Act_InsertLine ( (l+i), line_cntnt)) edtr
+            )) cntnt_lst
+            *)
         )
         | Act_I_InsertLine -> (
             let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
