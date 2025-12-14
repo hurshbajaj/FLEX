@@ -170,17 +170,6 @@ let lst_insert_at idx str lst =
     in aux 0 lst
 
 let cursor_to cy cx = Printf.printf "\027[%d;%dH%!" cy cx
-let into_vp edtr line_no = 
-    if line_no < edtr.viewport.top then (
-        edtr.viewport.top <- line_no-1; 
-    ) else if line_no > edtr.viewport.top + snd edtr.size then (
-        edtr.viewport.top <- max 0 (line_no- (snd edtr.size)); 
-    ) else edtr.cy <- line_no + 1
-
-let cy_into_vp edtr line_no = 
-    let pre_vtop = edtr.viewport.top in
-    into_vp edtr line_no;
-    if edtr.viewport.top < pre_vtop then edtr.cy <- 1 else if edtr.viewport.top > pre_vtop then ( edtr.cy <- line_no - edtr.viewport.top + 1 ) 
 
 let update_cursor_style edtr = 
     match edtr.mode with
@@ -289,6 +278,23 @@ let draw edtr =
     if edtr.status.toggled then ( draw_status edtr);
     cursor_to edtr.cy edtr.cx;
     flush Stdlib.stdout
+
+let cy_into_vp edtr line_no = 
+    (* line_no is 1-indexed (display line number) *)
+    let buffer_line = line_no - 1 in  (* Convert to 0-indexed buffer line *)
+    
+    if buffer_line < edtr.viewport.top then (
+        (* Line is above viewport - scroll up *)
+        edtr.viewport.top <- buffer_line;
+        edtr.cy <- 1  (* Cursor at top of screen *)
+    ) else if buffer_line >= edtr.viewport.top + snd edtr.size then (
+        (* Line is below viewport - scroll down *)
+        edtr.viewport.top <- max 0 (buffer_line - (snd edtr.size) + 1);
+        edtr.cy <- snd edtr.size  (* Cursor at bottom of screen *)
+    ) else (
+        (* Line is already visible - just set cursor position *)
+        edtr.cy <- buffer_line - edtr.viewport.top + 2
+    )
 
 (* CHARS & BYTES *)
 
@@ -511,7 +517,7 @@ let rec eval_act action edtr =
             let line = List.nth edtr.buffer.lines (snd pos) in
             let line_ = insert_str line (fst pos) (Some c) in
             edtr.buffer.lines <- lst_replace_at (snd pos) line_ edtr.buffer.lines;
-            edtr.cx <- edtr.cx + 1
+            edtr.cx <- (fst pos) + 2
         )
         | Act_I_RmChar -> ( (* UNDO impl is simply same as add char, but only that you hold content. negative start means new lines *)
             if edtr.cx > 1 then (
@@ -532,11 +538,11 @@ let rec eval_act action edtr =
             );
         )
         | Act_RmCharStr (l, strt, len, _) -> (
-            into_vp edtr l;
+            cy_into_vp edtr l;
             let line = List.nth edtr.buffer.lines (l) in
             let line_ = remove_slice line strt len in 
             edtr.buffer.lines <- lst_replace_at l line_ edtr.buffer.lines;
-            if l <> (edtr.cy + edtr.viewport.top) then edtr.cx <- strt+1
+            edtr.cx <- strt
         )
         | Act_AddCharStr (l, strt, _, content) -> ( 
             (*
@@ -547,10 +553,14 @@ let rec eval_act action edtr =
                 if i <> 0 then eval_act (Act_InsertLine ( (l+i), line_cntnt)) edtr
             )) cntnt_lst
             *)
-            cy_into_vp edtr (l+1); edtr.cx <- 0;
+            cy_into_vp edtr (l); 
             let cntnt_lst = String.split_on_char '\n' content in 
             if List.length cntnt_lst = 1 then
-                eval_act (Act_I_AddStr ( (List.hd cntnt_lst), (max 1 strt-1, l))) edtr
+                ( eval_act (Act_I_AddStr ( (List.hd cntnt_lst), (max 1 strt-1, l))) edtr; edtr.cx <- (strt - 1 + (String.length content)) )
+            else (
+                eval_act (Act_I_AddStr ( (List.hd cntnt_lst), (max 1 strt-1, l))) edtr;
+                List.iteri (fun i str -> eval_act (Act_InsertLine(l+i, str)) edtr) (List.tl cntnt_lst)
+            )
         )
         | Act_I_InsertLine -> (
             let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
@@ -647,3 +657,8 @@ let () =
     ));
 
     run edtr
+
+(* 
+    undo on add char and cursor freezes and goes to index 0, 
+    List.nth err in undo after removing smth
+*)
