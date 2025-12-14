@@ -39,7 +39,7 @@ type action =
     | Act_RmCharStr of int * int * int * bool (* line, start idx, length, W.E. *)
 
 type buffer = {
-    file: string;
+    file: string option;
     mutable lines: string list;
 }
 
@@ -83,6 +83,16 @@ type editor = {
 }
 
 (* HELPER *)
+
+let sublist start_idx end_idx lst =
+  let rec aux i = function
+    | [] -> []
+    | x :: xs ->
+        if i > end_idx then []
+        else if i >= start_idx then x :: aux (i + 1) xs
+        else aux (i + 1) xs
+  in
+  aux 0 lst
 
 let remove_slice s start len =
   let n = String.length s in
@@ -135,15 +145,27 @@ let adjust_inline_bounds edtr =
     if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap)
 (* -> BUF *)
 
-let buffer_of_file file = 
+let buffer_of_file fileG = 
+    match fileG with 
+    | Some file -> (
     let ic = open_in file in
     let len = in_channel_length ic in
     let content = really_input_string ic len in
     close_in ic;
     {
-        file = file;
+        file = Some file;
         lines = String.split_on_char '\n' content;
+    } )
+    | None -> {file = None; lines=[]}
+
+let buffer_of_string file content = 
+    {
+        file=file;
+        lines=(
+            String.split_on_char '\n' content
+        )
     }
+
 let insert_str s idx str =
     let len = String.length s in
     match str with
@@ -169,6 +191,9 @@ let lst_insert_at idx str lst =
         | hd::tl -> hd :: aux (i + 1) tl
         
     in aux 0 lst
+
+let get_vp_buf edtr = 
+    (List.fold_left (fun acc content -> acc^"\n"^content) "" (sublist edtr.viewport.top (min ( (List.length edtr.buffer.lines) - 1) (snd edtr.size + edtr.viewport.top - 1)) edtr.buffer.lines)) ^ (if (snd edtr.size + edtr.viewport.top-1 >= List.length edtr.buffer.lines) then "" else "\n")
 
 let cursor_to cy cx = Printf.printf "\027[%d;%dH%!" cy cx
 
@@ -222,8 +247,16 @@ let draw_status edtr =
       (edtr.viewport.top + edtr.cy) 
       (edtr.viewport.left + edtr.cx)
       (Printf.sprintf "%s / %s" 
-        (Filename.basename (Filename.dirname (Unix.realpath edtr.buffer.file)))
-        edtr.buffer.file) in
+        (try
+           let path =
+             match edtr.buffer.file with
+             | Some fileN -> fileN
+             | None -> Sys.getcwd ()
+           in
+           Filename.basename (Filename.dirname (Unix.realpath path))
+         with _ -> "-")
+
+        (match edtr.buffer.file with Some fileN -> fileN | None -> "-")) in
             (text, String.length text)
             in
 
@@ -287,7 +320,6 @@ let cy_into_vp edtr line_no =
         edtr.viewport.top <- buffer_line;
         edtr.cy <- 1
     ) else if buffer_line >= edtr.viewport.top + snd edtr.size then (
-        log loggr "YES";
         edtr.viewport.top <- max 0 (buffer_line - (snd edtr.size) + 1);
         edtr.cy <- snd edtr.size  
     ) else (
@@ -607,6 +639,10 @@ let run edtr =
     clear (); 
     
     try 
+
+    let test_locl = buffer_of_string None (get_vp_buf edtr) in
+    log loggr (List.nth test_locl.lines (List.length test_locl.lines - 1) );
+
     while true do (
         update_cursor_style edtr;
         edtr.act_info.vp_shift <- 0;
@@ -627,7 +663,7 @@ let () =
             file := Sys.argv.(1)
         );
 
-    let buffer = buffer_of_file !file in
+    let buffer = buffer_of_file (Some !file) in
 
     let act_info = {
         vp_shift = 0;

@@ -39,7 +39,7 @@ type action =
     | Act_RmCharStr of int * int * int * bool (* line, start idx, length, W.E. *)
 
 type buffer = {
-    file: string;
+    file: string option;
     mutable lines: string list;
 }
 
@@ -83,6 +83,16 @@ type editor = {
 }
 
 (* HELPER *)
+
+let sublist start_idx end_idx lst =
+  let rec aux i = function
+    | [] -> []
+    | x :: xs ->
+        if i > end_idx then []
+        else if i >= start_idx then x :: aux (i + 1) xs
+        else aux (i + 1) xs
+  in
+  aux 0 lst
 
 let remove_slice s start len =
   let n = String.length s in
@@ -135,15 +145,27 @@ let adjust_inline_bounds edtr =
     if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap)
 (* -> BUF *)
 
-let buffer_of_file file = 
+let buffer_of_file fileG = 
+    match fileG with 
+    | Some file -> (
     let ic = open_in file in
     let len = in_channel_length ic in
     let content = really_input_string ic len in
     close_in ic;
     {
-        file = file;
+        file = Some file;
         lines = String.split_on_char '\n' content;
+    } )
+    | None -> {file = None; lines=[]}
+
+let buffer_of_string file content = 
+    {
+        file=file;
+        lines=(
+            String.split_on_char '\n' content
+        )
     }
+
 let insert_str s idx str =
     let len = String.length s in
     match str with
@@ -169,6 +191,9 @@ let lst_insert_at idx str lst =
         | hd::tl -> hd :: aux (i + 1) tl
         
     in aux 0 lst
+
+let get_vp_buf edtr = 
+    (List.fold_left (fun acc content -> acc^"\n"^content) "" (sublist edtr.viewport.top (min ( (List.length edtr.buffer.lines) - 1) (snd edtr.size + edtr.viewport.top - 1)) edtr.buffer.lines)) ^ (if (snd edtr.size + edtr.viewport.top-1 >= List.length edtr.buffer.lines) then "" else "\n")
 
 let cursor_to cy cx = Printf.printf "\027[%d;%dH%!" cy cx
 
@@ -222,8 +247,16 @@ let draw_status edtr =
       (edtr.viewport.top + edtr.cy) 
       (edtr.viewport.left + edtr.cx)
       (Printf.sprintf "%s / %s" 
-        (Filename.basename (Filename.dirname (Unix.realpath edtr.buffer.file)))
-        edtr.buffer.file) in
+        (try
+           let path =
+             match edtr.buffer.file with
+             | Some fileN -> fileN
+             | None -> Sys.getcwd ()
+           in
+           Filename.basename (Filename.dirname (Unix.realpath path))
+         with _ -> "-")
+
+        (match edtr.buffer.file with Some fileN -> fileN | None -> "-")) in
             (text, String.length text)
             in
 
@@ -281,13 +314,12 @@ let draw edtr =
     flush Stdlib.stdout
 
 let cy_into_vp edtr line_no = 
-    let buffer_line = line_no - 1 in  
+    let buffer_line = line_no in  
     
     if buffer_line < edtr.viewport.top then (
         edtr.viewport.top <- buffer_line;
         edtr.cy <- 1
     ) else if buffer_line >= edtr.viewport.top + snd edtr.size then (
-        log loggr "YES";
         edtr.viewport.top <- max 0 (buffer_line - (snd edtr.size) + 1);
         edtr.cy <- snd edtr.size  
     ) else (
@@ -483,7 +515,7 @@ let rec eval_act action edtr =
             edtr.mode <- mode;
         )
         | Act_Pending act -> edtr.pending <- Some act
-        | Act_Seq seq -> ( (* TODO UNDO HANDLER, 0 indexing*)
+        | Act_Seq seq -> ( 
             List.iter (fun act -> adjust_SeqUndo edtr act; eval_act act edtr) seq;
             close_SeqUndo edtr
         )
@@ -558,14 +590,14 @@ let rec eval_act action edtr =
             );
         )
         | Act_RmCharStr (l, strt, len, _) -> (
-            cy_into_vp edtr (l+1);
+            cy_into_vp edtr (l);
             let line = List.nth edtr.buffer.lines (l) in
             let line_ = remove_slice line strt len in 
             edtr.buffer.lines <- lst_replace_at l line_ edtr.buffer.lines;
             edtr.cx <- (strt)
         )
         | Act_AddCharStr (l, strt, _, content) -> ( 
-            cy_into_vp edtr (l+1); 
+            cy_into_vp edtr (l); 
             let cntnt_lst = String.split_on_char '\n' content in 
             if List.length cntnt_lst = 1 then
                 ( eval_act (Act_I_AddStr ( (List.hd cntnt_lst), (max 1 strt-1, l))) edtr; edtr.cx <- (strt - 1 + (String.length content)) )
@@ -581,13 +613,13 @@ let rec eval_act action edtr =
             edtr.buffer.lines <- lst_replace_at (edtr.viewport.top + edtr.cy - 1) before edtr.buffer.lines;
             edtr.buffer.lines <- lst_insert_at (edtr.viewport.top + edtr.cy) after edtr.buffer.lines;
             
-            cy_into_vp edtr (edtr.cy + edtr.viewport.top + 1);
+            cy_into_vp edtr (edtr.cy + edtr.viewport.top);
 
             edtr.cx <- 1
         )
         | Act_InsertLine (line_no, content) -> (
             edtr.buffer.lines <- lst_insert_at line_no content edtr.buffer.lines;
-            cy_into_vp edtr (line_no+1);
+            cy_into_vp edtr (line_no);
             edtr.cx <- 1
         )
         | Act_KillLine (line_no) -> edtr.buffer.lines <- lst_remove_at line_no edtr.buffer.lines; if edtr.cy+edtr.viewport.top - 1 >= List.length edtr.buffer.lines then edtr.cy <- edtr.cy - 1
@@ -607,6 +639,10 @@ let run edtr =
     clear (); 
     
     try 
+
+    let test_locl = buffer_of_string None (get_vp_buf edtr) in
+    log loggr (List.nth test_locl.lines (List.length test_locl.lines - 1) );
+
     while true do (
         update_cursor_style edtr;
         edtr.act_info.vp_shift <- 0;
@@ -627,7 +663,7 @@ let () =
             file := Sys.argv.(1)
         );
 
-    let buffer = buffer_of_file !file in
+    let buffer = buffer_of_file (Some !file) in
 
     let act_info = {
         vp_shift = 0;
