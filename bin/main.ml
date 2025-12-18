@@ -1,7 +1,10 @@
+(* 
+    fix inline bounds when left != 0
+    highlighting
+*)
 [@@@warning "-26-27-32-33-21-69-37-34"]
 
 open Unix
-open Highlight
 
 exception Break
 
@@ -42,6 +45,7 @@ type action =
 type buffer = {
     file: string option;
     mutable lines: string list;
+    highlight_conf: Highlight.config;
 }
 
 type viewport = {
@@ -148,13 +152,16 @@ let real_length edtr = min (fst edtr.size) ( try max 1 ( String.length ( List.nt
 
 let adjust_inline_bounds edtr = 
     let real_length_ = real_length edtr in
+    let visible_length = max 1 (real_length_ - edtr.viewport.left) in
+    
     if (edtr.mode) = Mode_Edt then (
-        if ( edtr.cx > real_length_+1) then edtr.cx <- real_length_ + (if String.trim (List.nth edtr.buffer.lines (edtr.cy + edtr.viewport.top - 1)) = "" then 0 else 1)
-    )else if ( edtr.cx > real_length_) then edtr.cx <- real_length_;
+        if ( edtr.cx > visible_length+1) then edtr.cx <- visible_length + (if String.trim (List.nth edtr.buffer.lines (edtr.cy + edtr.viewport.top - 1)) = "" then 0 else 1)
+    )else if ( edtr.cx > visible_length) then edtr.cx <- visible_length;
     if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap)
 (* -> BUF *)
 
 let buffer_of_file fileG = 
+    let conf = Highlight.get_lang_config () in
     match fileG with 
     | Some file -> (
     let ic = open_in file in
@@ -164,15 +171,17 @@ let buffer_of_file fileG =
     {
         file = Some file;
         lines = String.split_on_char '\n' content;
+        highlight_conf = conf;
     } )
-    | None -> {file = None; lines=[]}
+    | None -> {file = None; lines=[]; highlight_conf = conf;}
 
 let buffer_of_string file content = 
     {
         file=file;
         lines=(
             String.split_on_char '\n' content
-        )
+        );
+        highlight_conf=Highlight.get_lang_config ()
     }
 
 let insert_str s idx str =
@@ -241,6 +250,21 @@ let clear () =
 
 let rgb r g b text = Printf.sprintf "\027[38;2;%d;%d;%dm%s\027[0m" r g b text
 
+let strip_path_delimiters path =
+  let path = 
+    if String.length path >= 2 && String.sub path 0 2 = "./" then
+      String.sub path 2 (String.length path - 2)
+    else
+      path
+  in
+  let path =
+    if String.length path > 0 && path.[String.length path - 1] = '/' then
+      String.sub path 0 (String.length path - 1)
+    else
+      path
+  in
+  path
+
 let draw_status edtr =
     let highlight = rgb 212 118 215 in
     let has_pending = is_some edtr.pending in
@@ -265,7 +289,7 @@ let draw_status edtr =
            Filename.basename (Filename.dirname (Unix.realpath path))
          with _ -> "-")
 
-        (match edtr.buffer.file with Some fileN -> fileN | None -> "-")) in
+        (match edtr.buffer.file with Some fileN -> strip_path_delimiters fileN | None -> "-")) in
             (text, String.length text)
             in
 
@@ -285,12 +309,11 @@ let draw_status edtr =
     
     edtr.status.status_row <- new_status_row
 
-let highlight buf = (
-)
+let highlight edtr buf = Highlight.highlight buf edtr.buffer.highlight_conf
 
 let draw_viewport edtr = 
     let vpbuf = get_vp_buf edtr in
-    let color_info = highlight vpbuf in
+    let content_full = String.split_on_char '\n' (highlight edtr vpbuf) in
 
     for i=1 to snd edtr.size  do
         let real_line = (i - 1) + edtr.viewport.top in
@@ -557,7 +580,7 @@ let rec eval_act action edtr =
         | Act_MovRight -> edtr.cx <- edtr.cx + 1;
         | Act_MovLeft -> if edtr.cx <> 1 then edtr.cx <- edtr.cx - 1 
 
-        | Act_VpShiftX -> edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size)
+        | Act_VpShiftX -> edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size);  edtr.cx <- 1
 
         | Act_PageUp -> edtr.viewport.top <- max 0 (edtr.viewport.top - snd edtr.size); edtr.cx <- 1; edtr.cy <- 1
         | Act_PageDown -> edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size
@@ -653,6 +676,7 @@ let run edtr =
     alt_screen 1;
     clear (); 
     
+    draw_status edtr;
     try 
 
     while true do (

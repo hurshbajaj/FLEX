@@ -6,7 +6,7 @@
 #include <string.h>
 
 extern void* get_lang_config(void);
-extern char* get_highlighted_ocaml(const unsigned char* src, size_t len, void* cfg);
+extern char* highlight_ocaml(const unsigned char* src, size_t len, void* cfg);
 extern void free_rust_string(char* s);
 
 static struct custom_operations config_ops = {
@@ -37,9 +37,9 @@ CAMLprim value ocaml_highlight(value src, value cfg) {
     size_t len = caml_string_length(src);
     void* config = *((void**)Data_custom_val(cfg));
 
-    char* res = get_highlighted_ocaml((const unsigned char*)s, len, config);
+    char* res = highlight_ocaml((const unsigned char*)s, len, config);
     out = caml_copy_string(res);
-    free(res);
+    free_rust_string(res);
 
     CAMLreturn(out);
 }

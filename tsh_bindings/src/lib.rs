@@ -117,3 +117,13 @@ pub extern "C" fn highlight_ocaml(
     CString::new(out).unwrap().into_raw()
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn free_rust_string(s: *mut c_char) {
+    if s.is_null() {
+        return;
+    }
+    unsafe {
+        drop(CString::from_raw(s));
+    }
+}
+
