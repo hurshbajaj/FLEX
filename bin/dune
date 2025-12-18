@@ -10,5 +10,5 @@
   (:standard 
    -cclib -L../../tsh_bindings/target/release 
    -cclib -ltsh_bindings 
-   -cclib -Wl,-rpath,/home/hursh/ocaml_ml/flex/tsh_bindings/target/release))
+   -cclib -Wl,-rpath,%{project_root}/flex/tsh_bindings/target/release))
  (flags (:standard -g)))
