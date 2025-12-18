@@ -1,7 +1,3 @@
-(* 
-    fix inline bounds when left != 0
-    highlighting
-*)
 [@@@warning "-26-27-32-33-21-69-37-34"]
 
 open Unix
@@ -211,7 +207,7 @@ let lst_insert_at idx str lst =
     in aux 0 lst
 
 let get_vp_buf edtr = 
-    (List.fold_left (fun acc content -> acc^"\n"^content) "" (sublist edtr.viewport.top (min ( (List.length edtr.buffer.lines) - 1) (snd edtr.size + edtr.viewport.top - 1)) edtr.buffer.lines)) ^ (if (snd edtr.size + edtr.viewport.top-1 >= List.length edtr.buffer.lines) then "" else "\n")
+    (List.fold_left (fun acc content -> acc^(if acc="" then "" else "\n")^content) "" (sublist edtr.viewport.top (min ( (List.length edtr.buffer.lines) - 1) (snd edtr.size + edtr.viewport.top - 1)) edtr.buffer.lines)) ^ (if (snd edtr.size + edtr.viewport.top-1 >= List.length edtr.buffer.lines) then "" else "\n")
 
 let cursor_to cy cx = Printf.printf "\027[%d;%dH%!" cy cx
 
@@ -317,7 +313,7 @@ let draw_viewport edtr =
 
     for i=1 to snd edtr.size  do
         let real_line = (i - 1) + edtr.viewport.top in
-        let content = if real_line > List.length edtr.buffer.lines - 1 then "" else ( List.nth edtr.buffer.lines real_line) in
+        let content = if real_line > List.length edtr.buffer.lines - 1 then "" else ( List.nth content_full (i-1)) in
         cursor_to i 1;
         print_string "\027[K";
         let foc_ = try String.sub content edtr.viewport.left (String.length content - edtr.viewport.left ) with | Invalid_argument _ -> "" in
