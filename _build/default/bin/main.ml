@@ -1,6 +1,7 @@
-[@@@warning "-26-27-32-33-21-69-37"]
+[@@@warning "-26-27-32-33-21-69-37-34"]
 
 open Unix
+open Highlight
 
 exception Break
 
@@ -62,6 +63,14 @@ type status = {
     mutable gap: int;
     mutable gap_: int;
     mutable toggled: bool;
+}
+
+type rgb_value = int * int *int
+
+type color_info = {
+    start: int;
+    end_: int;
+    color: rgb_value;
 }
 
 type editor = {
@@ -276,7 +285,13 @@ let draw_status edtr =
     
     edtr.status.status_row <- new_status_row
 
+let highlight buf = (
+)
+
 let draw_viewport edtr = 
+    let vpbuf = get_vp_buf edtr in
+    let color_info = highlight vpbuf in
+
     for i=1 to snd edtr.size  do
         let real_line = (i - 1) + edtr.viewport.top in
         let content = if real_line > List.length edtr.buffer.lines - 1 then "" else ( List.nth edtr.buffer.lines real_line) in
@@ -639,9 +654,6 @@ let run edtr =
     clear (); 
     
     try 
-
-    let test_locl = buffer_of_string None (get_vp_buf edtr) in
-    log loggr (List.nth test_locl.lines (List.length test_locl.lines - 1) );
 
     while true do (
         update_cursor_style edtr;

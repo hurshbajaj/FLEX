@@ -1,0 +1,44 @@
+Shared cache: enabled-except-user-rules
+Shared cache location: /home/hursh/.cache/dune/db
+Workspace root: /home/hursh/ocaml_ml/flex
+Auto-detected concurrency: 24
+Dune context:
+ { name = "default"
+ ; kind = "default"
+ ; profile = Dev
+ ; merlin = true
+ ; fdo_target_exe = None
+ ; build_dir = In_build_dir "default"
+ ; instrument_with = []
+ }
+Actual targets:
+- alias @@default
+Running[1]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlc.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -w -49 -nopervasives -nostdlib -g -bin-annot -bin-annot-occurrences -I lib/.flex.objs/byte -no-alias-deps -opaque -o lib/.flex.objs/byte/flex.cmo -c -impl lib/flex.ml-gen)
+Running[2]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlc.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -bin-annot -bin-annot-occurrences -I test/.test_flex.eobjs/byte -no-alias-deps -opaque -o test/.test_flex.eobjs/byte/dune__exe__Test_flex.cmi -c -intf test/test_flex.mli)
+Running[3]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlopt.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -w -49 -nopervasives -nostdlib -g -I lib/.flex.objs/byte -I lib/.flex.objs/native -cmi-file lib/.flex.objs/byte/flex.cmi -no-alias-deps -opaque -o lib/.flex.objs/native/flex.cmx -c -impl lib/flex.ml-gen)
+Running[4]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlc.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -a -o lib/flex.cma lib/.flex.objs/byte/flex.cmo)
+Running[5]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamldep.opt -modules -impl bin/main.ml) > _build/default/bin/.main.eobjs/dune__exe__Main.impl.d
+Running[6]: (cd _build/default/.dune/cc_vendor && /usr/bin/gcc -E -P header_check.h) > _build/default/.dune/cc_vendor/cc_vendor
+Running[7]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlopt.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -I test/.test_flex.eobjs/byte -I test/.test_flex.eobjs/native -cmi-file test/.test_flex.eobjs/byte/dune__exe__Test_flex.cmi -no-alias-deps -opaque -o test/.test_flex.eobjs/native/dune__exe__Test_flex.cmx -c -impl test/test_flex.ml)
+Running[8]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlopt.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -a -o lib/flex.cmxa lib/.flex.objs/native/flex.cmx)
+Running[9]: (cd _build/default/bin && /usr/bin/gcc -O2 -fno-strict-aliasing -fwrapv -fPIC -pthread -D_FILE_OFFSET_BITS=64 -Wall -fdiagnostics-color=always -g -I /home/hursh/.opam/5.4.0/lib/ocaml -I /home/hursh/.opam/5.4.0/lib/ANSITerminal -I /home/hursh/.opam/5.4.0/lib/bytes -I /home/hursh/.opam/5.4.0/lib/ocaml/unix -I ../lib -o c_stub.o -c c_stub.c)
+Running[10]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamldep.opt -modules -impl bin/highlight.ml) > _build/default/bin/.main.eobjs/dune__exe__Highlight.impl.d
+Running[11]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlc.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -w -49 -nopervasives -nostdlib -g -bin-annot -bin-annot-occurrences -I bin/.main.eobjs/byte -no-alias-deps -opaque -o bin/.main.eobjs/byte/dune__exe.cmo -c -impl bin/.main.eobjs/dune__exe.ml-gen)
+Running[12]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamldep.opt -modules -intf bin/main.mli) > _build/default/bin/.main.eobjs/dune__exe__Main.intf.d
+Running[13]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlopt.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -o test/test_flex.exe test/.test_flex.eobjs/native/dune__exe__Test_flex.cmx)
+Running[14]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlopt.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -w -49 -nopervasives -nostdlib -g -I bin/.main.eobjs/byte -I bin/.main.eobjs/native -cmi-file bin/.main.eobjs/byte/dune__exe.cmi -no-alias-deps -opaque -o bin/.main.eobjs/native/dune__exe.cmx -c -impl bin/.main.eobjs/dune__exe.ml-gen)
+Running[15]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlc.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -g -bin-annot -bin-annot-occurrences -I bin/.main.eobjs/byte -I /home/hursh/.opam/5.4.0/lib/ANSITerminal -I /home/hursh/.opam/5.4.0/lib/bytes -I /home/hursh/.opam/5.4.0/lib/ocaml/unix -I lib/.flex.objs/byte -no-alias-deps -opaque -open Dune__exe -o bin/.main.eobjs/byte/dune__exe__Highlight.cmo -c -impl bin/highlight.ml)
+Running[16]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlc.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -g -bin-annot -bin-annot-occurrences -I bin/.main.eobjs/byte -I /home/hursh/.opam/5.4.0/lib/ANSITerminal -I /home/hursh/.opam/5.4.0/lib/bytes -I /home/hursh/.opam/5.4.0/lib/ocaml/unix -I lib/.flex.objs/byte -no-alias-deps -opaque -open Dune__exe -o bin/.main.eobjs/byte/dune__exe__Main.cmi -c -intf bin/main.mli)
+Running[17]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlopt.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -g -I bin/.main.eobjs/byte -I bin/.main.eobjs/native -I /home/hursh/.opam/5.4.0/lib/ANSITerminal -I /home/hursh/.opam/5.4.0/lib/bytes -I /home/hursh/.opam/5.4.0/lib/ocaml/unix -I lib/.flex.objs/byte -I lib/.flex.objs/native -cmi-file bin/.main.eobjs/byte/dune__exe__Highlight.cmi -no-alias-deps -opaque -open Dune__exe -o bin/.main.eobjs/native/dune__exe__Highlight.cmx -c -impl bin/highlight.ml)
+Running[18]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlopt.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -g -I bin/.main.eobjs/byte -I bin/.main.eobjs/native -I /home/hursh/.opam/5.4.0/lib/ANSITerminal -I /home/hursh/.opam/5.4.0/lib/bytes -I /home/hursh/.opam/5.4.0/lib/ocaml/unix -I lib/.flex.objs/byte -I lib/.flex.objs/native -cmi-file bin/.main.eobjs/byte/dune__exe__Main.cmi -no-alias-deps -opaque -open Dune__exe -o bin/.main.eobjs/native/dune__exe__Main.cmx -c -impl bin/main.ml)
+Running[19]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlopt.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -shared -linkall -I lib -o lib/flex.cmxs lib/flex.cmxa)
+Running[20]: (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlopt.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -g -o bin/main.exe lib/flex.cmxa /home/hursh/.opam/5.4.0/lib/ocaml/unix/unix.cmxa /home/hursh/.opam/5.4.0/lib/ANSITerminal/ANSITerminal.cmxa -I /home/hursh/.opam/5.4.0/lib/ANSITerminal bin/c_stub.o bin/.main.eobjs/native/dune__exe.cmx bin/.main.eobjs/native/dune__exe__Highlight.cmx bin/.main.eobjs/native/dune__exe__Main.cmx -cclib -L../tsh_bindings/target/release -cclib -ltsh_bindings -cclib -Wl,-rpath,$ORIGIN)
+File "bin/dune", line 3, characters 7-11:
+3 |  (name main)
+           ^^^^
+Command [20] exited with code 2:
+$ (cd _build/default && /home/hursh/.opam/5.4.0/bin/ocamlopt.opt -w @1..3@5..28@31..39@43@46..47@49..57@61..62@67@69-40 -strict-sequence -strict-formats -short-paths -keep-locs -g -g -o bin/main.exe lib/flex.cmxa /home/hursh/.opam/5.4.0/lib/ocaml/unix/unix.cmxa /home/hursh/.opam/5.4.0/lib/ANSITerminal/ANSITerminal.cmxa -I /home/hursh/.opam/5.4.0/lib/ANSITerminal bin/c_stub.o bin/.main.eobjs/native/dune__exe.cmx bin/.main.eobjs/native/dune__exe__Highlight.cmx bin/.main.eobjs/native/dune__exe__Main.cmx -cclib -L../tsh_bindings/target/release -cclib -ltsh_bindings -cclib -Wl,-rpath,$ORIGIN)
+/usr/bin/ld: cannot find -ltsh_bindings: No such file or directory
+collect2: error: ld returned 1 exit status
+File "caml_startup", line 1:
+Error: Error during linking (exit code 1)

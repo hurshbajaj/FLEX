@@ -1,6 +1,14 @@
 (executable
-  (public_name flex)
-  (name main)
-  (libraries flex unix ANSITerminal)
-  (flags (:standard -g))
- )
+ (public_name flex)
+ (name main)
+ (modules main highlight)
+ (foreign_stubs
+  (language c)
+  (names c_stub))
+ (libraries flex unix ANSITerminal)
+ (link_flags 
+  (:standard 
+   -cclib -L../../tsh_bindings/target/release 
+   -cclib -ltsh_bindings 
+   -cclib -Wl,-rpath,/home/hursh/ocaml_ml/flex/tsh_bindings/target/release))
+ (flags (:standard -g)))

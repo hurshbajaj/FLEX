@@ -1,4 +1,4 @@
-# dune exec flex ./bin/main.ml
+# dune exec flex
 # OCAMLPARAM: unset
 # Shared cache: enabled-except-user-rules
 # Shared cache location: /home/hursh/.cache/dune/db
@@ -13,4 +13,4 @@
 #  ; build_dir = In_build_dir "default"
 #  ; instrument_with = []
 #  }
-$ /home/hursh/.opam/5.4.0/bin/ocamlc.opt -config > /tmp/dune_1f61a6_output
+$ /home/hursh/.opam/5.4.0/bin/ocamlc.opt -config > /tmp/dune_ff2308_output
