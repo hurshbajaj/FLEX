@@ -1,8 +1,0 @@
-lib: [
-  "_build/install/default/lib/flex/META"
-  "_build/install/default/lib/flex/dune-package"
-  "_build/install/default/lib/flex/opam"
-]
-bin: [
-  "_build/install/default/bin/flex"
-]
