@@ -305,7 +305,83 @@ let draw_status edtr =
     
     edtr.status.status_row <- new_status_row
 
+(* 
+    non shift
+    ->>  
+
+    with shift
+*)
+
 let highlight edtr buf = Highlight.highlight buf edtr.buffer.highlight_conf
+
+let visible_length_of s =
+  let len = String.length s in
+  let rec go i acc =
+    if i >= len then acc
+    else if s.[i] = '\027' && i + 1 < len && s.[i + 1] = '[' then
+      let rec skip j =
+        if j >= len then len
+        else if s.[j] = 'm' then j + 1
+        else skip (j + 1)
+      in
+      go (skip (i + 2)) acc
+    else
+      go (i + 1) (acc + 1)
+  in
+  go 0 0
+
+let ansi_inc a b =
+  let len = String.length b in
+  let rec go i =
+    if i <= 0 then `None
+    else if b.[i] = 'm' then `None
+    else if i >= 1 && b.[i] = '[' && b.[i - 1] = '\027' then `Found (i - 1)
+    else go (i - 1)
+  in
+  if a < 0 || a >= len then (a, None)
+  else
+    match go a with
+    | `None -> (a, None)
+    | `Found i -> (a, Some (String.sub b i (a - i + 1)))
+
+let truncate_to_visible s max_visible =
+  let len = String.length s in
+  let rec go pos visible_count =
+    if visible_count >= max_visible || pos >= len then pos
+    else if pos < len && s.[pos] = '\027' && pos + 1 < len && s.[pos + 1] = '[' then
+      let rec skip_seq j =
+        if j >= len then j
+        else if s.[j] = 'm' then j + 1
+        else skip_seq (j + 1)
+      in
+      go (skip_seq (pos + 2)) visible_count
+    else
+      go (pos + 1) (visible_count + 1)
+  in
+  let end_pos = go 0 0 in
+  String.sub s 0 end_pos
+
+let skip_visible_chars_with_escape s start count =
+  let len = String.length s in
+  let last_escape = ref None in
+  let rec go pos visible_skipped physical_pos =
+    if visible_skipped >= count || physical_pos >= len then (physical_pos, !last_escape)
+    else if physical_pos < len && s.[physical_pos] = '\027' && physical_pos + 1 < len && s.[physical_pos + 1] = '[' then
+      let seq_start = physical_pos in
+      let rec skip_seq j =
+        if j >= len then j
+        else if s.[j] = 'm' then j + 1
+        else skip_seq (j + 1)
+      in
+      let seq_end = skip_seq (physical_pos + 2) in
+      last_escape := Some (String.sub s seq_start (seq_end - seq_start));
+      go pos visible_skipped seq_end
+    else
+      go pos (visible_skipped + 1) (physical_pos + 1)
+  in
+  go start 0 start
+
+(* fix bottom line | fix mouse flicker | add new action *)
 
 let draw_viewport edtr = 
     let vpbuf = get_vp_buf edtr in
@@ -313,10 +389,16 @@ let draw_viewport edtr =
 
     for i=1 to snd edtr.size  do
         let real_line = (i - 1) + edtr.viewport.top in
+        log loggr (List.nth edtr.buffer.lines real_line);
         let content = if real_line > List.length edtr.buffer.lines - 1 then "" else ( List.nth content_full (i-1)) in
         cursor_to i 1;
         print_string "\027[K";
-        let foc_ = try String.sub content edtr.viewport.left (String.length content - edtr.viewport.left ) with | Invalid_argument _ -> "" in
+        let physical_start, to_apply = skip_visible_chars_with_escape content 0 edtr.viewport.left in
+        let foc_ = ref (try String.sub content physical_start (String.length content - physical_start) with | Invalid_argument _ -> "") in
+
+        (match to_apply with 
+        | Some ta -> foc_ := ta ^ !foc_ 
+        | None -> ());
         
         let max_len = 
             if i = snd edtr.size then 
@@ -326,17 +408,17 @@ let draw_viewport edtr =
         in
         
         let foc = 
-            if String.length foc_ > max_len then (
+            if visible_length_of !foc_ > max_len then (
+                log loggr (Printf.sprintf "overflow at line -> %d ; visible len -> %d ; max_len -> %d" i (visible_length_of !foc_) max_len);
                 if i = snd edtr.size then edtr.status.overlap <- true;
-                String.sub foc_ 0 max_len
+                truncate_to_visible !foc_ max_len
             ) else (
                 if i = snd edtr.size then edtr.status.overlap <- false;
-                foc_
+                !foc_
             )
         in
         print_string foc;
-
-        let crnt_vp = try ( max 0 (  (String.length content - 1) / fst edtr.size ) ) with | Division_by_zero -> 0 in
+        let crnt_vp = try ( max 0 (  (visible_length_of content - 1) / fst edtr.size ) ) with | Division_by_zero -> 0 in
         if edtr.act_info.vp_shift < crnt_vp then edtr.act_info.vp_shift <- crnt_vp
         
     done
@@ -567,12 +649,16 @@ let rec eval_act action edtr =
             )
         )
         | Act_MovDown -> (
-            let eof = (min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy) ) ) with Invalid_argument _ -> 1 | Failure nth -> 0 )) = 0 in
+            let next_line_idx = edtr.viewport.top + edtr.cy in
+            let eof = next_line_idx >= List.length edtr.buffer.lines in
             if not eof then
-            if edtr.cy < snd edtr.size then edtr.cy <- edtr.cy + 1 else (
-                if edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top + 1)
-            ) 
-        )
+                if edtr.cy < snd edtr.size then 
+                    edtr.cy <- edtr.cy + 1 
+            else (
+                if edtr.viewport.left = 0 then 
+                    edtr.viewport.top <- edtr.viewport.top + 1
+        ) 
+            )
         | Act_MovRight -> edtr.cx <- edtr.cx + 1;
         | Act_MovLeft -> if edtr.cx <> 1 then edtr.cx <- edtr.cx - 1 
 
