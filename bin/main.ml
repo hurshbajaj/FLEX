@@ -26,7 +26,7 @@ type action =
 
     | Act_StatusI | Act_ToggleStatus
 
-    | Act_VpShiftX  
+    | Act_VpShiftX | Act_NegVpShiftX
 
     | Act_Pending of string
     | Act_Undo
@@ -476,6 +476,7 @@ let handle_jmp_ev ev edtr =
             | 'l' -> Act_EoL
             | ' ' -> Act_ModeSwitch (Mode_Edt)
             | ';' -> Act_VpShiftX
+            | '\072' -> Act_NegVpShiftX
             | 'i' -> Act_ToggleStatus
             | 'w' -> Act_PageUp
             | 's' -> Act_PageDown
@@ -654,6 +655,7 @@ let rec eval_act action edtr =
         | Act_MovLeft -> if edtr.cx <> 1 then edtr.cx <- edtr.cx - 1 
 
         | Act_VpShiftX -> edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size);  edtr.cx <- 1
+        | Act_NegVpShiftX -> edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size);  edtr.cx <- 1
 
         | Act_PageUp -> edtr.viewport.top <- max 0 (edtr.viewport.top - snd edtr.size); edtr.cx <- 1; edtr.cy <- 1
         | Act_PageDown -> edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size
