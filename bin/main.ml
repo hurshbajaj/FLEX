@@ -207,7 +207,12 @@ let lst_insert_at idx str lst =
     in aux 0 lst
 
 let get_vp_buf edtr = 
-    (List.fold_left (fun acc content -> acc^(if acc="" then "" else "\n")^content) "" (sublist edtr.viewport.top (min ( (List.length edtr.buffer.lines) - 1) (snd edtr.size + edtr.viewport.top - 1)) edtr.buffer.lines)) ^ (if (snd edtr.size + edtr.viewport.top-1 >= List.length edtr.buffer.lines) then "" else "\n")
+    let out = (List.fold_left 
+    (fun acc content -> acc^"\n"^content)
+    "" 
+    (sublist edtr.viewport.top (min ( (List.length edtr.buffer.lines) - 1) (snd edtr.size + edtr.viewport.top)) edtr.buffer.lines)) ^ 
+    (if (snd edtr.size + edtr.viewport.top-1 >= List.length edtr.buffer.lines) then "" else "\n") in
+    out
 
 let cursor_to cy cx = Printf.printf "\027[%d;%dH%!" cy cx
 
@@ -330,20 +335,6 @@ let visible_length_of s =
   in
   go 0 0
 
-let ansi_inc a b =
-  let len = String.length b in
-  let rec go i =
-    if i <= 0 then `None
-    else if b.[i] = 'm' then `None
-    else if i >= 1 && b.[i] = '[' && b.[i - 1] = '\027' then `Found (i - 1)
-    else go (i - 1)
-  in
-  if a < 0 || a >= len then (a, None)
-  else
-    match go a with
-    | `None -> (a, None)
-    | `Found i -> (a, Some (String.sub b i (a - i + 1)))
-
 let truncate_to_visible s max_visible =
   let len = String.length s in
   let rec go pos visible_count =
@@ -382,14 +373,15 @@ let skip_visible_chars_with_escape s start count =
   go start 0 start
 
 (* fix bottom line | fix mouse flicker | add new action *)
+(* look into src itself, what u recv from ffi *)
 
 let draw_viewport edtr = 
-    let vpbuf = get_vp_buf edtr in
-    let content_full = String.split_on_char '\n' (highlight edtr vpbuf) in
+    let vpbuf_ = get_vp_buf edtr in
+    let vpbuf = if (edtr.viewport.top = 0) then String.sub vpbuf_ 1 (String.length vpbuf_ - 1) else vpbuf_ in
+    let content_full = String.split_on_char '\n' (let temp = highlight edtr (vpbuf) in  temp) in
 
     for i=1 to snd edtr.size  do
         let real_line = (i - 1) + edtr.viewport.top in
-        log loggr (List.nth edtr.buffer.lines real_line);
         let content = if real_line > List.length edtr.buffer.lines - 1 then "" else ( List.nth content_full (i-1)) in
         cursor_to i 1;
         print_string "\027[K";
@@ -409,7 +401,6 @@ let draw_viewport edtr =
         
         let foc = 
             if visible_length_of !foc_ > max_len then (
-                log loggr (Printf.sprintf "overflow at line -> %d ; visible len -> %d ; max_len -> %d" i (visible_length_of !foc_) max_len);
                 if i = snd edtr.size then edtr.status.overlap <- true;
                 truncate_to_visible !foc_ max_len
             ) else (
@@ -657,8 +648,8 @@ let rec eval_act action edtr =
             else (
                 if edtr.viewport.left = 0 then 
                     edtr.viewport.top <- edtr.viewport.top + 1
-        ) 
-            )
+            ) 
+        )
         | Act_MovRight -> edtr.cx <- edtr.cx + 1;
         | Act_MovLeft -> if edtr.cx <> 1 then edtr.cx <- edtr.cx - 1 
 
