@@ -6,6 +6,7 @@ use std::str::FromStr;
 use serde_json::Value;
 use std::ffi::{CString};
 use std::os::raw::c_char;
+
 fn fetch_queries() -> (String, String, String) {
     let base = std::env::var("FLEX_QUERIES")
         .expect("FLEX_QUERIES environment variable not set");
@@ -92,6 +93,7 @@ pub extern "C" fn highlight_ocaml(
                 }
                 if let Some(i) = current {
                     let color = colors.get(i).map(|s| s.as_str()).unwrap_or("");
+
                     let text = std::str::from_utf8(&source[start..end]).unwrap();
                     out.push_str(&format!("\x1b[38;2;{}m{}\x1b[0m", color.replace(' ', ";"), text));
                 } else {

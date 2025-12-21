@@ -26,7 +26,7 @@ type action =
 
     | Act_StatusI | Act_ToggleStatus
 
-    | Act_VpShiftX | Act_NegVpShiftX
+    | Act_VpShiftX 
 
     | Act_Pending of string
     | Act_Undo
@@ -208,7 +208,7 @@ let lst_insert_at idx str lst =
 
 let get_vp_buf edtr = 
     let out = (List.fold_left 
-    (fun acc content -> acc^"\n"^content)
+    (fun acc content -> acc^content^"\n")
     "" 
     (sublist edtr.viewport.top (min ( (List.length edtr.buffer.lines) - 1) (snd edtr.size + edtr.viewport.top)) edtr.buffer.lines)) ^ 
     (if (snd edtr.size + edtr.viewport.top-1 >= List.length edtr.buffer.lines) then "" else "\n") in
@@ -372,12 +372,8 @@ let skip_visible_chars_with_escape s start count =
   in
   go start 0 start
 
-(* fix bottom line | fix mouse flicker | add new action *)
-(* look into src itself, what u recv from ffi *)
-
 let draw_viewport edtr = 
-    let vpbuf_ = get_vp_buf edtr in
-    let vpbuf = if (edtr.viewport.top = 0) then String.sub vpbuf_ 1 (String.length vpbuf_ - 1) else vpbuf_ in
+    let vpbuf = get_vp_buf edtr in
     let content_full = String.split_on_char '\n' (let temp = highlight edtr (vpbuf) in  temp) in
 
     for i=1 to snd edtr.size  do
@@ -476,7 +472,6 @@ let handle_jmp_ev ev edtr =
             | 'l' -> Act_EoL
             | ' ' -> Act_ModeSwitch (Mode_Edt)
             | ';' -> Act_VpShiftX
-            | '\072' -> Act_NegVpShiftX
             | 'i' -> Act_ToggleStatus
             | 'w' -> Act_PageUp
             | 's' -> Act_PageDown
@@ -655,7 +650,6 @@ let rec eval_act action edtr =
         | Act_MovLeft -> if edtr.cx <> 1 then edtr.cx <- edtr.cx - 1 
 
         | Act_VpShiftX -> edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size);  edtr.cx <- 1
-        | Act_NegVpShiftX -> edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size);  edtr.cx <- 1
 
         | Act_PageUp -> edtr.viewport.top <- max 0 (edtr.viewport.top - snd edtr.size); edtr.cx <- 1; edtr.cy <- 1
         | Act_PageDown -> edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size
