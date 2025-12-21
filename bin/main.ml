@@ -373,7 +373,8 @@ let skip_visible_chars_with_escape s start count =
   go start 0 start
 
 let draw_viewport edtr = 
-    let vpbuf = get_vp_buf edtr in
+    let vpbuf_ = get_vp_buf edtr in
+    let vpbuf = if (edtr.viewport.top = (List.length edtr.buffer.lines - snd edtr.size)) then String.sub vpbuf_ 0 (String.length vpbuf_ - 2) else vpbuf_ in
     let content_full = String.split_on_char '\n' (let temp = highlight edtr (vpbuf) in  temp) in
 
     for i=1 to snd edtr.size  do

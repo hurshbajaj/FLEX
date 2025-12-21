@@ -7,6 +7,32 @@ use serde_json::Value;
 use std::ffi::{CString};
 use std::os::raw::c_char;
 
+
+fn parse_highlight_json() -> (Vec<String>, Vec<String>) {
+    let base = std::env::var("FLEX_QUERIES")
+        .expect("FLEX_QUERIES environment variable not set");
+    let base = Path::new(&base);
+    
+    // let json_path = base.join("highlights.json");
+    let json_path = base.join("theme.json");
+    let json = fs::read_to_string(&json_path).unwrap_or_else(|e| {
+        eprintln!("Failed to read highlights.json: {}", e);
+        panic!("Could not find highlights.json at {:?}", json_path);
+    });
+    
+    let parsed: Value = serde_json::from_str(&json).unwrap_or(Value::Object(Default::default()));
+    let mut names = Vec::new();
+    let mut colors = Vec::new();
+    if let Value::Object(map) = parsed {
+        for (k, v) in map {
+            names.push(k);
+            colors.push(v.as_str().unwrap_or("").to_string());
+        }
+    }
+    (names, colors)
+}
+
+
 fn fetch_queries() -> (String, String, String) {
     let base = std::env::var("FLEX_QUERIES")
         .expect("FLEX_QUERIES environment variable not set");
@@ -27,28 +53,6 @@ fn fetch_lang() -> Language {
 }
 fn fetch_lang_name() -> String {
     String::from_str("ocaml").unwrap()
-}
-fn parse_highlight_json() -> (Vec<String>, Vec<String>) {
-    let base = std::env::var("FLEX_QUERIES")
-        .expect("FLEX_QUERIES environment variable not set");
-    let base = Path::new(&base);
-    
-    let json_path = base.join("highlights.json");
-    let json = fs::read_to_string(&json_path).unwrap_or_else(|e| {
-        eprintln!("Failed to read highlights.json: {}", e);
-        panic!("Could not find highlights.json at {:?}", json_path);
-    });
-    
-    let parsed: Value = serde_json::from_str(&json).unwrap_or(Value::Object(Default::default()));
-    let mut names = Vec::new();
-    let mut colors = Vec::new();
-    if let Value::Object(map) = parsed {
-        for (k, v) in map {
-            names.push(k);
-            colors.push(v.as_str().unwrap_or("").to_string());
-        }
-    }
-    (names, colors)
 }
 fn build_config() -> HighlightConfiguration {
     let (names, _) = parse_highlight_json();

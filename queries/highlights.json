@@ -1,33 +1,24 @@
 {
-  "punctuation.delimiter": "92 97 120",
-  "punctuation.bracket": "118 124 160",
-  "punctuation.special": "187 154 247",
-
-  "keyword": "122 162 247",
-  "operator": "125 207 255",
-
-  "constant": "255 158 100",
-  "number": "255 158 100",
-
-  "string": "158 206 106",
-  "escape": "247 118 142",
-  "string.special": "122 201 200",
-
-  "variable": "192 202 245",
-  "variable.parameter": "173 142 230",
-  "property": "122 201 200",
-
-  "function": "187 154 247",
-  "function.method": "130 170 255",
-  "function.builtin": "122 162 247",
-
-  "type": "101 210 255",
-  "type.builtin": "255 140 170",
-  "constructor": "224 175 255",
-
-  "module": "125 170 255",
-  "tag": "224 175 255",
-
-  "comment": "86 95 137"
+  "punctuation.delimiter": "180 180 180",
+  "punctuation.bracket": "220 120 50",
+  "punctuation.special": "255 80 180",
+  "keyword": "200 50 120",
+  "operator": "100 200 220",
+  "constant": "240 160 60",
+  "number": "80 180 100",
+  "string": "220 180 100",
+  "escape": "255 100 50",
+  "string.special": "160 220 180",
+  "variable": "120 150 255",
+  "variable.parameter": "180 120 200",
+  "property": "100 220 140",
+  "function": "255 200 80",
+  "function.method": "200 100 200",
+  "function.builtin": "140 100 240",
+  "type": "80 200 180",
+  "type.builtin": "255 140 100",
+  "constructor": "220 80 160",
+  "module": "100 160 200",
+  "tag": "200 220 80",
+  "comment": "120 120 120"
 }
-
