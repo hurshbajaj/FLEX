@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
 use tree_sitter_highlight::{HighlightEvent, Highlighter, HighlightConfiguration};
 use tree_sitter::Language;
-use std::fs;
+use std::{fs, usize};
 use std::path::Path;
 use std::str::FromStr;
 use serde_json::{Map, Value};
 use std::ffi::{CString};
 use std::os::raw::c_char;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 struct RGB {
@@ -34,7 +35,8 @@ struct TokenStyle {
 struct Theme {
     name: String,
     style: Style,
-    token_styles: Vec<TokenStyle>
+    tok_scopes: HashMap<String, usize>,
+    tok_styles: Vec<Style>
 }
 
 //vsc-themes
@@ -88,10 +90,10 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
         .expect("FLEX_QUERIES environment variable not set");
     let base = Path::new(&base);
     
-    let json_path = base.join("theme.json");
+    let json_path = base.join(file_name);
     let json_string = fs::read_to_string(&json_path).unwrap_or_else(|e| {
-        eprintln!("Failed to read theme.json: {}", e);
-        panic!("Could not find theme.json at {:?}", json_path);
+        eprintln!("Failed to read theme: {}", e);
+        panic!("Could not find theme at {:?}", json_path);
     }); 
 
     let json: JSON_SH_INTER = serde_json::from_str(&json_string).unwrap();
@@ -99,21 +101,29 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
     let fg = Some(hex_to_rgb((json.colors.get("editor.foreground").unwrap().as_str()).unwrap_or("#FFFFFF")));
     let bg = Some ( hex_to_rgb((json.colors.get("editor.background").unwrap().as_str()).unwrap_or("#FFFFFF")) );
     let style = Style {fg, bg, italic: false, bold: false};
-    let token_styles = json.token_colors.iter().map(|tc| {TokenStyle { name: tc.get("name").unwrap().to_string(), scope: tc.get("scope").iter().map(|el| el.to_string()).collect(), 
-        style: Style{fg: tc.get("settings")
+
+    let mut tok_scopes = HashMap::new();
+    let mut tok_styles = vec![];
+
+    json.token_colors.iter().enumerate().for_each(|x| {
+        let i = x.0;
+        let tc = x.1;
+        tc.get("scope").iter().for_each(|s| {tok_scopes.insert(s.to_string(), i);});
+        tok_styles.push(Style{
+            fg: tc.get("settings")
             .and_then(|s| s.get("foreground"))
             .and_then(|b| b.as_str())
             .map(|s| hex_to_rgb(s)),
-        bg: tc.get("settings")
+            bg: tc.get("settings")
             .and_then(|s| s.get("background"))
             .and_then(|b| b.as_str())
-            .map(|s| hex_to_rgb(s))
-        ,
-        italic: { let tempX = tc.get("settings").unwrap().get("fontStyle").and_then(|s|{Some(s.as_str().unwrap().contains("italic ") || s.as_str().unwrap().split_whitespace().last().unwrap() == "italic")}); tempX.unwrap_or(false) } ,
-        bold: { let tempX = tc.get("settings").unwrap().get("fontStyle").and_then(|s|{Some(s.as_str().unwrap().contains("bold ") || s.as_str().unwrap().split_whitespace().last().unwrap() == "bold")}); tempX.unwrap_or(false) } 
-        } }}).collect();
+            .map(|s| hex_to_rgb(s)),
+            italic: { let temp_x = tc.get("settings").unwrap().get("fontStyle").and_then(|s|{Some(s.as_str().unwrap().contains("italic ") || s.as_str().unwrap().split_whitespace().last().unwrap() == "italic")}); temp_x.unwrap_or(false) },
+            bold: { let temp_x = tc.get("settings").unwrap().get("fontStyle").and_then(|s|{Some(s.as_str().unwrap().contains("bold ") || s.as_str().unwrap().split_whitespace().last().unwrap() == "bold")}); temp_x.unwrap_or(false) }
+        });
+    });
 
-    return Theme {name, style, token_styles };
+    return Theme {name, style, tok_scopes, tok_styles };
 }
 
 #[cfg(test)]
@@ -121,36 +131,9 @@ mod tests {
     use super::*;
     #[test]
     fn json_parse () {
-        println!("{:?}", parse_syntax_highlight_src("theme.json").token_styles.first() );
+        println!("{:?}", parse_syntax_highlight_src("theme.json").tok_styles[50] );
     }
 }
-
-/*
-
-/*
-fn parse_highlight_json() -> (Vec<String>, Vec<String>) {
-    let base = std::env::var("FLEX_QUERIES")
-        .expect("FLEX_QUERIES environment variable not set");
-    let base = Path::new(&base);
-    
-    let json_path = base.join("highlights.json");
-    let json = fs::read_to_string(&json_path).unwrap_or_else(|e| {
-        eprintln!("Failed to read highlights.json: {}", e);
-        panic!("Could not find highlights.json at {:?}", json_path);
-    });
-    
-    let parsed: Value = serde_json::from_str(&json).unwrap_or(Value::Object(Default::default()));
-    let mut names = Vec::new();
-    let mut colors = Vec::new();
-    if let Value::Object(map) = parsed {
-        for (k, v) in map {
-            names.push(k);
-            colors.push(v.as_str().unwrap_or("").to_string());
-        }
-    }
-    (names, colors)
-}
-*/
 
 fn fetch_queries() -> (String, String, String) {
     let base = std::env::var("FLEX_QUERIES")
@@ -174,7 +157,9 @@ fn fetch_lang_name() -> String {
     String::from_str("ocaml").unwrap()
 }
 fn build_config() -> HighlightConfiguration {
-    let (names, _) = parse_highlight_json();
+    let temp_a = parse_syntax_highlight_src("theme.json");
+    let names = temp_a.tok_scopes.keys().collect::<Vec<&String>>();
+
     let (h, i, l) = fetch_queries();
     let mut cfg = HighlightConfiguration::new(
         fetch_lang(),
@@ -191,46 +176,181 @@ fn build_config() -> HighlightConfiguration {
 pub extern "C" fn get_lang_config() -> *mut HighlightConfiguration {
     Box::into_raw(Box::new(build_config()))
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_terminal_width() -> usize {
+    if let Some((w, _)) = term_size::dimensions() {
+        w
+    } else {
+        80 
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn highlight_ocaml_with_width(
+    source_ptr: *const u8,
+    source_len: usize,
+    config: *mut HighlightConfiguration,
+    terminal_width: usize,
+) -> *mut c_char {
+    let source = unsafe { std::slice::from_raw_parts(source_ptr, source_len) };
+    let theme = parse_syntax_highlight_src("theme.json");
+    let tok_styles = &theme.tok_styles;
+    let tok_scopes = &theme.tok_scopes;
+    let default_style = &theme.style;
+    
+    let names: Vec<String> = tok_scopes.keys().cloned().collect();
+    
+    let mut highlighter = Highlighter::new();
+    let highlights = highlighter
+        .highlight(unsafe { &*config }, source, None, |_| None)
+        .unwrap();
+    
+    let mut out = String::new();
+    let mut last = 0usize;
+    let mut current_style: Option<&Style> = None;
+    let mut last_applied_style: Option<String> = None;
+    let mut current_line_length = 0usize;
+
+    for event in highlights {
+        match event.unwrap() {
+            HighlightEvent::HighlightStart(s) => {
+                let scope_name = names.get(s.0);
+                if let Some(scope) = scope_name {
+                    if let Some(&style_idx) = tok_scopes.get(scope) {
+                        current_style = tok_styles.get(style_idx);
+                    }
+                }
+            }
+            HighlightEvent::HighlightEnd => {
+                current_style = None;
+            }
+            HighlightEvent::Source { start, end } => {
+                if start > last {
+                    let gap_text = std::str::from_utf8(&source[last..start]).unwrap();
+                    apply_style_incremental(
+                        gap_text, 
+                        default_style, 
+                        default_style, 
+                        &mut out, 
+                        &mut last_applied_style,
+                        &mut current_line_length,
+                        terminal_width
+                    );
+                }
+                
+                let text = std::str::from_utf8(&source[start..end]).unwrap();
+                let style_to_use = current_style.unwrap_or(default_style);
+                apply_style_incremental(
+                    text, 
+                    style_to_use, 
+                    default_style, 
+                    &mut out, 
+                    &mut last_applied_style,
+                    &mut current_line_length,
+                    terminal_width
+                );
+                
+                last = end;
+            }
+        }
+    }
+    
+    if last < source.len() {
+        let remaining = std::str::from_utf8(&source[last..]).unwrap();
+        apply_style_incremental(
+            remaining, 
+            default_style, 
+            default_style, 
+            &mut out, 
+            &mut last_applied_style,
+            &mut current_line_length,
+            terminal_width
+        );
+    }
+    
+    if current_line_length > 0 && current_line_length < terminal_width {
+        let padding = terminal_width - current_line_length;
+        out.push_str(&" ".repeat(padding));
+    }
+    
+    out.push_str("\x1b[0m");
+    
+    CString::new(out).unwrap().into_raw()
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn highlight_ocaml(
     source_ptr: *const u8,
     source_len: usize,
     config: *mut HighlightConfiguration,
 ) -> *mut c_char {
-    let source = unsafe { std::slice::from_raw_parts(source_ptr, source_len) };
-    let (_, colors) = parse_highlight_json();
-    let mut highlighter = Highlighter::new();
-    let highlights = highlighter
-        .highlight(unsafe { &*config }, source, None, |_| None)
-        .unwrap();
-    let mut out = String::new();
-    let mut last = 0usize;
-    let mut current: Option<usize> = None;
-    for event in highlights {
-        match event.unwrap() {
-            HighlightEvent::HighlightStart(s) => current = Some(s.0),
-            HighlightEvent::HighlightEnd => current = None,
-            HighlightEvent::Source { start, end } => {
-                if start > last {
-                    out.push_str(std::str::from_utf8(&source[last..start]).unwrap());
-                }
-                if let Some(i) = current {
-                    let color = colors.get(i).map(|s| s.as_str()).unwrap_or("");
+    highlight_ocaml_with_width(source_ptr, source_len, config, get_terminal_width())
+}
 
-                    let text = std::str::from_utf8(&source[start..end]).unwrap();
-                    out.push_str(&format!("\x1b[38;2;{}m{}\x1b[0m", color.replace(' ', ";"), text));
-                } else {
-                    out.push_str(std::str::from_utf8(&source[start..end]).unwrap());
-                }
-                last = end;
+fn apply_style_incremental(
+    text: &str, 
+    style: &Style, 
+    default_style: &Style, 
+    out: &mut String,
+    last_style: &mut Option<String>,
+    current_line_length: &mut usize,
+    terminal_width: usize
+) {
+    let mut codes = Vec::new();
+    
+    if let Some(fg) = &style.fg {
+        codes.push(format!("38;2;{};{};{}", fg.r, fg.g, fg.b));
+    } else if let Some(default_fg) = &default_style.fg {
+        codes.push(format!("38;2;{};{};{}", default_fg.r, default_fg.g, default_fg.b));
+    }
+    
+    if let Some(bg) = &style.bg {
+        codes.push(format!("48;2;{};{};{}", bg.r, bg.g, bg.b));
+    } else if let Some(default_bg) = &default_style.bg {
+        codes.push(format!("48;2;{};{};{}", default_bg.r, default_bg.g, default_bg.b));
+    }
+    
+    if style.bold {
+        codes.push("1".to_string());
+    }
+    if style.italic {
+        codes.push("3".to_string());
+    }
+    
+    let style_code = codes.join(";");
+    
+    if last_style.as_ref() != Some(&style_code) {
+        out.push_str(&format!("\x1b[{}m", style_code));
+        *last_style = Some(style_code);
+    }
+    
+    let parts: Vec<&str> = text.split('\n').collect();
+    for (i, part) in parts.iter().enumerate() {
+        if i > 0 {
+            if *current_line_length < terminal_width {
+                let padding = terminal_width - *current_line_length;
+                out.push_str(&" ".repeat(padding));
+            }
+            
+            out.push('\n');
+            *current_line_length = 0;
+            
+            if let &mut Some(ref style) = last_style {
+                out.push_str(&format!("\x1b[{}m", style));
             }
         }
+        
+        if part.is_empty() && i < parts.len() - 1 {
+            out.push_str(&" ".repeat(terminal_width));
+            *current_line_length = terminal_width;
+        } else {
+            out.push_str(part);
+            *current_line_length += part.len();
+        }
     }
-    if last < source.len() {
-        out.push_str(std::str::from_utf8(&source[last..]).unwrap());
-    }
-    CString::new(out).unwrap().into_raw()
 }
+
 #[unsafe(no_mangle)]
 pub extern "C" fn free_rust_string(s: *mut c_char) {
     if s.is_null() {
@@ -240,4 +360,6 @@ pub extern "C" fn free_rust_string(s: *mut c_char) {
         drop(CString::from_raw(s));
     }
 }
-*/
+
+// UI COLORS
+// STATUS BACKGROUND ; expose fns

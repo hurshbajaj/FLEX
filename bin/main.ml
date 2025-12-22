@@ -206,13 +206,22 @@ let lst_insert_at idx str lst =
         
     in aux 0 lst
 
-let get_vp_buf edtr = 
-    let out = (List.fold_left 
-    (fun acc content -> acc^content^"\n")
-    "" 
-    (sublist edtr.viewport.top (min ( (List.length edtr.buffer.lines) - 1) (snd edtr.size + edtr.viewport.top)) edtr.buffer.lines)) ^ 
-    (if (snd edtr.size + edtr.viewport.top-1 >= List.length edtr.buffer.lines) then "" else "\n") in
-    out
+let get_vp_buf edtr =
+    let height = snd edtr.size in
+    let top = edtr.viewport.top in
+    let lines = edtr.buffer.lines in
+    let buf_len = List.length lines in
+
+    let rec build i acc =
+        if i >= height then acc
+        else
+            let idx = top + i in
+            let line =
+                if idx < buf_len then List.nth lines idx else ""
+            in
+            build (i + 1) (acc ^ line ^ "\n")
+    in
+    build 0 ""
 
 let cursor_to cy cx = Printf.printf "\027[%d;%dH%!" cy cx
 
@@ -374,8 +383,7 @@ let skip_visible_chars_with_escape s start count =
 
 
 let draw_viewport edtr = 
-    let vpbuf_ = get_vp_buf edtr in
-    let vpbuf = if (edtr.viewport.top = (List.length edtr.buffer.lines - snd edtr.size)) then String.sub vpbuf_ 0 (String.length vpbuf_ - 2) else vpbuf_ in
+    let vpbuf = get_vp_buf edtr in
     let content_full = String.split_on_char '\n' (let temp = highlight edtr (vpbuf) in  temp) in
 
     for i=1 to snd edtr.size  do
@@ -660,7 +668,7 @@ let rec eval_act action edtr =
         | Act_CenterLine line -> (
             let atline = edtr.viewport.top + edtr.cy in
             let fTOP = ( ( edtr.cy )  - (snd edtr.size/2) ) + edtr.viewport.top in
-            edtr.viewport.top <- min ( max 0 fTOP)  ( List.length edtr.buffer.lines - snd edtr.size ); 
+            edtr.viewport.top <- min ( max 0 fTOP)  ( List.length edtr.buffer.lines - (snd edtr.size/2) ); 
             edtr.cy <- atline - edtr.viewport.top
         )
         | Act_ToBufferTop -> (
@@ -731,7 +739,11 @@ let rec eval_act action edtr =
             cy_into_vp edtr (line_no);
             edtr.cx <- 1
         )
-        | Act_KillLine (line_no) -> edtr.buffer.lines <- lst_remove_at line_no edtr.buffer.lines; if edtr.cy+edtr.viewport.top - 1 >= List.length edtr.buffer.lines then edtr.cy <- edtr.cy - 1
+        | Act_KillLine (line_no) -> (
+            cy_into_vp edtr (max 0 (edtr.viewport.top + edtr.cy - 2));
+            edtr.buffer.lines <- lst_remove_at line_no edtr.buffer.lines; 
+            if edtr.cy+edtr.viewport.top - 1 >= List.length edtr.buffer.lines then edtr.cy <- edtr.cy - 1
+        )
     );
 
     adjust_inline_bounds edtr
