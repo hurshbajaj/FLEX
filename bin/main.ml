@@ -354,23 +354,24 @@ let truncate_to_visible s max_visible =
 
 let skip_visible_chars_with_escape s start count =
   let len = String.length s in
-  let last_escape = ref None in
-  let rec go pos visible_skipped physical_pos =
-    if visible_skipped >= count || physical_pos >= len then (physical_pos, !last_escape)
-    else if physical_pos < len && s.[physical_pos] = '\027' && physical_pos + 1 < len && s.[physical_pos + 1] = '[' then
-      let seq_start = physical_pos in
+  let escapes = Buffer.create 32 in
+  let rec go visible_skipped physical_pos =
+    if visible_skipped >= count || physical_pos >= len then
+      (physical_pos, if Buffer.length escapes = 0 then None else Some (Buffer.contents escapes))
+    else if physical_pos + 1 < len && s.[physical_pos] = '\027' && s.[physical_pos + 1] = '[' then
       let rec skip_seq j =
         if j >= len then j
         else if s.[j] = 'm' then j + 1
         else skip_seq (j + 1)
       in
       let seq_end = skip_seq (physical_pos + 2) in
-      last_escape := Some (String.sub s seq_start (seq_end - seq_start));
-      go pos visible_skipped seq_end
+      Buffer.add_substring escapes s physical_pos (seq_end - physical_pos);
+      go visible_skipped seq_end
     else
-      go pos (visible_skipped + 1) (physical_pos + 1)
+      go (visible_skipped + 1) (physical_pos + 1)
   in
-  go start 0 start
+  go 0 start
+
 
 let draw_viewport edtr = 
     let vpbuf_ = get_vp_buf edtr in
