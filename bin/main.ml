@@ -298,11 +298,13 @@ let draw_status edtr =
     let has_pending = is_some edtr.pending in
     let mode_str = string_of_mode edtr.mode in
 
-    let content, visual_len = if edtr.status.status_i = 0 then
+    let content, visual_len, pending_part = if edtr.status.status_i = 0 then
         let base = mode_str in
-        let visual = (if has_pending then 3+(match edtr.pending with Some c -> String.length c | None -> 0) else 0) + String.length base + (if edtr.status.overlap || has_pending then 0 else 1) in
-        let display = (if has_pending then " " ^ (match edtr.pending with Some c -> c | None -> "") ^ "* " else (if edtr.status.overlap then "" else " ")) ^ base in
-        (display, visual)
+        let pending_str = if has_pending then (match edtr.pending with Some c -> c | None -> "") else "" in
+        let visual = (if has_pending then 2 + String.length pending_str + (if edtr.status.overlap then 0 else 1) else 0) + String.length base + (if edtr.status.overlap || has_pending then 0 else 1) in
+        let display = (if edtr.status.overlap || has_pending then "" else " ") ^ base in
+        let pending = if has_pending then Some ((if edtr.status.overlap then "" else " ") ^ pending_str ^ "*") else None in
+        (display, visual, pending)
         else
             let text = Printf.sprintf "%s%d : %d | %s" 
       (if edtr.status.overlap || has_pending then "" else " ")
@@ -318,7 +320,7 @@ let draw_status edtr =
            Filename.basename (Filename.dirname (Unix.realpath path))
          with _ -> "-")
         (match edtr.buffer.file with Some fileN -> strip_path_delimiters fileN | None -> "-")) in
-            (text, String.length text)
+            (text, String.length text, None)
             in
 
     cursor_to edtr.status.status_row edtr.status.status_start;
@@ -336,6 +338,11 @@ let draw_status edtr =
                 ornament_fg_r ornament_fg_g ornament_fg_b 
                 ornament_bg_r ornament_bg_g ornament_bg_b
         else "") ^
+        (match pending_part with
+         | Some p -> Printf.sprintf "\027[38;2;%d;%d;%d;48;2;%d;%d;%dm%s \027[0m" 
+                        status_fg_r status_fg_g status_fg_b 
+                        status_bg_r status_bg_g status_bg_b p
+         | None -> "") ^
         Printf.sprintf "\027[38;2;%d;%d;%d;48;2;%d;%d;%dm%s\027[0m" 
             status_fg_r status_fg_g status_fg_b 
             status_bg_r status_bg_g status_bg_b
@@ -673,22 +680,23 @@ let rec eval_act action edtr =
         )
         | Act_MovDown -> (
             let next_line_idx = edtr.viewport.top + edtr.cy in
-            let eof = next_line_idx >= List.length edtr.buffer.lines in
-            if not eof then
+            let eof = next_line_idx >= List.length edtr.buffer.lines-1 in
+            if not eof then (
                 if edtr.cy < snd edtr.size then 
                     edtr.cy <- edtr.cy + 1 
-            else (
-                if edtr.viewport.left = 0 then 
-                    edtr.viewport.top <- edtr.viewport.top + 1
-            ) 
+                else (
+                    if edtr.viewport.left = 0 then 
+                        edtr.viewport.top <- edtr.viewport.top + 1
+                )       
+            )
         )
         | Act_MovRight -> edtr.cx <- edtr.cx + 1;
         | Act_MovLeft -> if edtr.cx <> 1 then edtr.cx <- edtr.cx - 1 
 
         | Act_VpShiftX -> edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size);  edtr.cx <- 1
 
-        | Act_PageUp -> edtr.viewport.top <- max 0 (edtr.viewport.top - snd edtr.size); edtr.cx <- 1; edtr.cy <- 1
-        | Act_PageDown -> edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size
+        | Act_PageUp -> if edtr.viewport.left = 0 then (edtr.viewport.top <- max 0 (edtr.viewport.top - snd edtr.size); edtr.cx <- 1; edtr.cy <- 1)
+        | Act_PageDown -> if edtr.viewport.left = 0 then ( edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size)
         | Act_EoL -> edtr.cx <- real_length_
         | Act_BoL -> edtr.cx <- real_length_ - real_length_trim + 1
         | Act_CenterLine line -> (
@@ -698,13 +706,17 @@ let rec eval_act action edtr =
             edtr.cy <- atline - edtr.viewport.top
         )
         | Act_ToBufferTop -> (
-            edtr.viewport.top <- 0;
-            edtr.cy <- 1; edtr.cx <- 1
+            if edtr.viewport.left = 0 then(
+                edtr.viewport.top <- 0;
+                edtr.cy <- 1; edtr.cx <- 1
+            )
         )
         | Act_ToBufferBottom -> (
-            edtr.viewport.top <- max (List.length edtr.buffer.lines - snd edtr.size) 1;
-            edtr.cy <- List.length edtr.buffer.lines - edtr.viewport.top;
-            edtr.cx <- real_length edtr
+            if edtr.viewport.left = 0 then(
+                edtr.viewport.top <- max (List.length edtr.buffer.lines - snd edtr.size - 1) 1;
+                edtr.cy <- List.length edtr.buffer.lines - edtr.viewport.top;
+                edtr.cx <- real_length edtr
+            )
         )
 
         (* INSERTION *)
