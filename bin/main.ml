@@ -6,8 +6,6 @@ open Helper
 
 exception Break
 
-(* DRAW *)
-
 let highlight_text r g b text = Printf.sprintf "\027[38;2;%d;%d;%dm%s\027[0m" r g b text
 let highlight_bg r g b text = Printf.sprintf "\027[48;2;%d;%d;%dm%s\027[0m" r g b text
 
@@ -167,8 +165,6 @@ let cy_into_vp edtr line_no =
         edtr.cy <- buffer_line - edtr.viewport.top + 1
     )
 
-(* ACTION HANDLING *)
-
 let handle_jmp_ev ev edtr = 
     match ev with
     | c when (Some "k" = edtr.pending) -> (
@@ -245,8 +241,6 @@ let handle_ev mode ev edtr =
     | Mode_Jmp -> handle_jmp_ev ev edtr
     | Mode_Edt -> handle_edit_ev ev edtr
 
-(* UNDOS *)
-
 let close_SeqUndo edtr = 
     match (try (List.hd edtr.undo_lst) with | _ -> Act_NONE) with
     | Act_SeqUndo (acts, we) -> edtr.undo_lst <- (Act_SeqUndo(acts, false) )::(try List.tl edtr.undo_lst with _ -> [])
@@ -291,7 +285,15 @@ let update_undo_lst edtr act = match act with
             adjust_InsertAddUndo edtr (edtr.viewport.top + edtr.cy - 1) (edtr.viewport.left +  edtr.cx - 1)
     )   
     | Act_I_RmChar ->  (
-        adjust_InsertRmUndo edtr (edtr.viewport.top + edtr.cy - 1) (edtr.viewport.left +  edtr.cx - 1)
+        if edtr.cx = 1 && edtr.cy > 1 then (
+            let current_line_idx = edtr.viewport.top + edtr.cy - 1 in
+            let prev_line = List.nth edtr.buffer.lines (current_line_idx - 1) in
+            let current_line = List.nth edtr.buffer.lines current_line_idx in
+            edtr.undo_lst <- (Act_InsertLine (current_line_idx, current_line)) :: edtr.undo_lst;
+            edtr.undo_lst <- (Act_RmCharStr (current_line_idx - 1, String.length prev_line, String.length current_line, false)) :: edtr.undo_lst
+        ) else (
+            adjust_InsertRmUndo edtr (edtr.viewport.top + edtr.cy - 1) (edtr.viewport.left +  edtr.cx - 1)
+        )
     )  
     | Act_KillLine line_no -> (
         edtr.undo_lst <- Act_InsertLine (line_no, List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1)) :: edtr.undo_lst;
@@ -300,7 +302,7 @@ let update_undo_lst edtr act = match act with
     | Act_I_InsertLine ->  edtr.undo_lst <- ( (Act_KillLineShift (edtr.viewport.top + edtr.cy )) :: edtr.undo_lst );      
     | _ -> ()
 
-let adjust_SeqUndo edtr act_ = ( (* NOT TESTED *)
+let adjust_SeqUndo edtr act_ = (
     let initial_len = List.length edtr.undo_lst in
     update_undo_lst edtr act_ ;
     if initial_len < List.length edtr.undo_lst then (
@@ -317,8 +319,6 @@ let adjust_SeqUndo edtr act_ = ( (* NOT TESTED *)
     )
 )
 
-(* *)
-
 let rec eval_act action edtr = 
     let real_length_ = real_length edtr in
     let real_length_trim = min (fst edtr.size) ( try max 1 ( String.length ( String.trim ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 ) in
@@ -328,7 +328,6 @@ let rec eval_act action edtr =
     (match action with | Act_I_RmChar | Act_KillLine _ -> () | _ -> close_AddCharStr edtr);
 
     (match action with
-        (* META ACTIONS *)
         | Act_Quit -> raise Break  
         | Act_NONE -> ()
 
@@ -346,11 +345,9 @@ let rec eval_act action edtr =
         | Act_SeqUndo (seq, _) -> ( 
             List.iter (fun act -> eval_act act edtr) seq;
         )
-        (* VISUAL *)
         | Act_StatusI -> if edtr.status.status_i = 0 then ( edtr.status.status_i <- 1 ) else ( edtr.status.status_i <- 0 )
         | Act_ToggleStatus -> if edtr.status.toggled then (edtr.status.toggled <- false; edtr.status.gap <- 0) else (edtr.status.toggled <- true; edtr.status.gap <- edtr.status.gap_) 
 
-        (* MOVEMENT *)
         | Act_MovUp -> (
             if edtr.cy <> 1 then edtr.cy <- edtr.cy - 1 else (
                 if edtr.viewport.top <> 0 && edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top - 1)
@@ -397,7 +394,6 @@ let rec eval_act action edtr =
             )
         )
 
-        (* INSERTION *)
         | Act_I_AddStr (c, pos) -> (
             log loggr "checkpo1";
             let line = List.nth edtr.buffer.lines (snd pos) in
