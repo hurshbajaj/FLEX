@@ -883,6 +883,5 @@ let () =
     run edtr
 
 (* 
-    1) fix undo of entering in bw a line.
     2) fix undo of backspace at the beginning of a line.
 *)
