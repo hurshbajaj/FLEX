@@ -1,262 +1,10 @@
 [@@@warning "-26-27-32-33-21-69-37-34"]
 
 open Unix
+open Types
+open Helper
 
 exception Break
-
-(* TYPES *)
-type logger = {
-    oc: out_channel;
-    file: string;
-    lock: Mutex.t;
-}
-
-type mode = Mode_Edt | Mode_Jmp
-
-type action = 
-    | Act_MovUp | Act_MovDown | Act_MovLeft | Act_MovRight 
-    | Act_PageDown | Act_PageUp | Act_EoL | Act_BoL
-    | Act_Quit 
-    | Act_RepLast
-    | Act_NONE 
-    | Act_Seq of action list
-    | Act_SeqUndo of action list * bool
-    | Act_ModeSwitch of mode
-    | Act_I_AddStr of string * (int * int) | Act_I_RmChar | Act_I_InsertLine
-
-    | Act_StatusI | Act_ToggleStatus
-
-    | Act_VpShiftX 
-
-    | Act_Pending of string
-    | Act_Undo
-    | Act_KillLine of int | Act_KillLineShift of int | Act_InsertLine of int * string
-    | Act_CenterLine of int
-
-    | Act_ToBufferTop | Act_ToBufferBottom
-
-    | Act_AddCharStr of int * int * bool * string (* line, start idx, W.E. , content *)
-    | Act_RmCharStr of int * int * int * bool (* line, start idx, length, W.E. *)
-
-type buffer = {
-    file: string option;
-    mutable lines: string list;
-    highlight_conf: Highlight.config;
-}
-
-type viewport = {
-    mutable top: int;
-    mutable left: int;
-}
-
-type act_info = {
-    mutable vp_shift: int;
-}
-
-type status = {
-    mutable status_i: int;
-    mutable status_len: int;
-    mutable status_start: int;
-    mutable status_row: int;
-
-    mutable overlap: bool;
-    mutable gap: int;
-    mutable gap_: int;
-    mutable toggled: bool;
-}
-
-type rgb_value = int * int *int
-
-type color_info = {
-    start: int;
-    end_: int;
-    color: rgb_value;
-}
-
-type editor = {
-    buffer: buffer;
-    viewport: viewport;
-
-    mutable size: int * int;
-    mutable cx: int;
-    mutable cy: int;
-
-    mutable mode: mode;
-    mutable pending: string option;
-
-    status: status;
-
-    act_info: act_info;
-
-    mutable undo_lst: action list;
-}
-
-(* HELPER *)
-
-let sublist start_idx end_idx lst =
-  let rec aux i = function
-    | [] -> []
-    | x :: xs ->
-        if i > end_idx then []
-        else if i >= start_idx then x :: aux (i + 1) xs
-        else aux (i + 1) xs
-  in
-  aux 0 lst
-
-let remove_slice s start len =
-  let n = String.length s in
-  String.sub s 0 start ^
-  String.sub s (start + len) (n - start - len)
-
-let is_some = function
-  | Some _ -> true
-  | None -> false
-
-let string_of_mode mode = match mode with
-| Mode_Jmp -> "JMP"
-| Mode_Edt -> "EDT"
-
-(* TYPE METHODS *)
-
-let get_logger file = 
-    let oc = open_out file in
-    {
-        oc;
-        file;
-        lock = Mutex.create ()
-    }
-let log loggr content = 
-    Mutex.lock loggr.lock;
-    output_string loggr.oc (content^"\n");
-    flush loggr.oc;
-    Mutex.unlock loggr.lock
-let logger_done loggr = 
-    Mutex.lock loggr.lock;
-    let _ = open_out loggr.file in
-    close_out loggr.oc
-let loggr = get_logger "flex.log"
-
-let last_act = ref Act_NONE
-
-let viewport_of_ctx buffer size = 
-    {
-        top = 0;
-        left = 0;
-    }
-
-let real_length edtr = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 )
-
-let adjust_inline_bounds edtr = 
-    let real_length_ = real_length edtr in
-    let visible_length = max 1 (real_length_ - edtr.viewport.left) in
-    
-    if (edtr.mode) = Mode_Edt then (
-        if ( edtr.cx > visible_length+1) then edtr.cx <- visible_length + (if String.trim (List.nth edtr.buffer.lines (edtr.cy + edtr.viewport.top - 1)) = "" then 0 else 1)
-    )else if ( edtr.cx > visible_length) then edtr.cx <- visible_length;
-    if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap)
-(* -> BUF *)
-
-let buffer_of_file fileG = 
-    let conf = Highlight.get_lang_config () in
-    match fileG with 
-    | Some file -> (
-    let ic = open_in file in
-    let len = in_channel_length ic in
-    let content = really_input_string ic len in
-    close_in ic;
-    {
-        file = Some file;
-        lines = String.split_on_char '\n' content;
-        highlight_conf = conf;
-    } )
-    | None -> {file = None; lines=[]; highlight_conf = conf;}
-
-let buffer_of_string file content = 
-    {
-        file=file;
-        lines=(
-            String.split_on_char '\n' content
-        );
-        highlight_conf=Highlight.get_lang_config ()
-    }
-
-let insert_str s idx str =
-    log loggr "INSERTING STR";
-    let len = String.length s in
-    match str with
-    | Some str_ -> ( try ( String.sub s 0 idx ) with | _ -> "" ) ^ str_ ^ (try ( String.sub s idx (len - idx) ) with | _ -> "")
-    | None -> String.sub s 0 (idx-1) ^ String.sub s idx (len - idx)
-
-let lst_replace_at i x lst =
-    let rec aux idx = function
-    | [] -> []
-    | _ :: tl when idx = i -> x :: tl
-    | hd :: tl -> hd :: aux (idx + 1) tl
-    in
-    aux 0 lst
-let lst_remove_at idx lst =
-    let rec aux i = function
-    | [] -> []
-    | _ :: tl when i = idx -> tl
-    | hd :: tl -> hd :: aux (i + 1) tl
-    in aux 0 lst
-let lst_insert_at idx str lst = 
-    let rec aux i = function
-        | [] -> str::[] 
-        | hd :: tl when i = idx -> str::hd::tl
-        | hd::tl -> hd :: aux (i + 1) tl
-        
-    in aux 0 lst
-
-let get_vp_buf edtr =
-    let height = snd edtr.size in
-    let top = edtr.viewport.top in
-    let lines = edtr.buffer.lines in
-    let buf_len = List.length lines in
-
-    let rec build i acc =
-        if i >= height then acc
-        else
-            let idx = top + i in
-            let line =
-                if idx < buf_len then List.nth lines idx else ""
-            in
-            build (i + 1) (acc ^ line ^ "\n")
-    in
-    build 0 ""
-
-let cursor_to cy cx = Printf.printf "\027[%d;%dH%!" cy cx
-
-let update_cursor_style edtr = 
-    match edtr.mode with
-    | Mode_Edt -> if not (is_some edtr.pending ) then print_string "\027[6 q" else print_string "\027[3 q"
-    | Mode_Jmp -> if not (is_some edtr.pending ) then print_string "\027[2 q" else print_string "\027[3 q"
-
-(* PRELIMS *)
-
-let raw_mode  fd = 
-    let attr = tcgetattr fd in
-    let raw = {
-        attr with
-        c_icanon =false;
-        c_echo = false; 
-        c_isig = false;
-    } in
-    tcsetattr fd TCSANOW raw
-
-let disable_raw fd old = tcsetattr fd TCSANOW old
-
-let alt_screen cmd = 
-    if cmd = 1 then (print_string "\027[?1049h") else print_string "\027[?1049l";
-    flush Stdlib.stdout
-
-let cleanup fd old = 
-    alt_screen 0;
-    disable_raw fd old
-
-let clear () =     
-    print_string "\027[2J\027[H";
-    flush Stdlib.stdout
 
 (* DRAW *)
 
@@ -361,60 +109,6 @@ let draw_status edtr =
 
 let highlight edtr buf = Highlight.highlight buf edtr.buffer.highlight_conf
 
-let visible_length_of s =
-    let len = String.length s in
-    let rec go i acc =
-    if i >= len then acc
-    else if s.[i] = '\027' && i + 1 < len && s.[i + 1] = '[' then
-      let rec skip j =
-        if j >= len then len
-        else if s.[j] = 'm' then j + 1
-        else skip (j + 1)
-      in
-      go (skip (i + 2)) acc
-    else
-      go (i + 1) (acc + 1)
-      in
-    go 0 0
-
-let truncate_to_visible s max_visible =
-  let len = String.length s in
-  let rec go pos visible_count =
-    if visible_count >= max_visible || pos >= len then pos
-    else if pos < len && s.[pos] = '\027' && pos + 1 < len && s.[pos + 1] = '[' then
-      let rec skip_seq j =
-        if j >= len then j
-        else if s.[j] = 'm' then j + 1
-        else skip_seq (j + 1)
-      in
-      go (skip_seq (pos + 2)) visible_count
-    else
-      go (pos + 1) (visible_count + 1)
-  in
-  let end_pos = go 0 0 in
-  String.sub s 0 end_pos
-
-let skip_visible_chars_with_escape s start count =
-    let len = String.length s in
-    let escapes = Buffer.create 32 in
-    let rec go visible_skipped physical_pos =
-        if visible_skipped >= count || physical_pos >= len then
-            (physical_pos, if Buffer.length escapes = 0 then None else Some (Buffer.contents escapes))
-            else if physical_pos + 1 < len && s.[physical_pos] = '\027' && s.[physical_pos + 1] = '[' then
-                let rec skip_seq j =
-                    if j >= len then j
-        else if s.[j] = 'm' then j + 1
-                    else skip_seq (j + 1)
-    in
-      let seq_end = skip_seq (physical_pos + 2) in
-      Buffer.add_substring escapes s physical_pos (seq_end - physical_pos);
-      go visible_skipped seq_end
-        else
-            go (visible_skipped + 1) (physical_pos + 1)
-      in
-    go 0 start
-
-
 let draw_viewport edtr = 
     let vpbuf = get_vp_buf edtr in
     let vpbuf_split = String.split_on_char '\n' vpbuf in
@@ -472,27 +166,6 @@ let cy_into_vp edtr line_no =
     ) else (
         edtr.cy <- buffer_line - edtr.viewport.top + 1
     )
-
-(* CHARS & BYTES *)
-
-let print_intChar b = print_char (char_of_int b)
-
-let safe_read fd buf pos len =
-    let rec aux () =
-        try
-            read fd buf pos len
-    with
-    | Unix.Unix_error (Unix.EINTR, _, _) -> aux ()
-    in
-    aux ()
-
-let read_char edtr : char = 
-    let buf = Bytes.create 5 in
-    let _ = safe_read stdin buf 0 5 in
-    let b1 = Bytes.get buf 0 in let b2 =  Bytes.get buf 1 in
-    if b1 = '\027' && ( b2 = '[' || b2 = 'O' ) then 
-        ( '\000') else 
-            b1
 
 (* ACTION HANDLING *)
 
@@ -572,6 +245,8 @@ let handle_ev mode ev edtr =
     | Mode_Jmp -> handle_jmp_ev ev edtr
     | Mode_Edt -> handle_edit_ev ev edtr
 
+(* UNDOS *)
+
 let close_SeqUndo edtr = 
     match (try (List.hd edtr.undo_lst) with | _ -> Act_NONE) with
     | Act_SeqUndo (acts, we) -> edtr.undo_lst <- (Act_SeqUndo(acts, false) )::(try List.tl edtr.undo_lst with _ -> [])
@@ -641,6 +316,8 @@ let adjust_SeqUndo edtr act_ = ( (* NOT TESTED *)
         | _ ->  edtr.undo_lst <- (Act_SeqUndo (act::[], true ))::edtr.undo_lst
     )
 )
+
+(* *)
 
 let rec eval_act action edtr = 
     let real_length_ = real_length edtr in
