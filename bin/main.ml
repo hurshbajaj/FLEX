@@ -258,7 +258,8 @@ let clear () =
 
 (* DRAW *)
 
-let rgb r g b text = Printf.sprintf "\027[38;2;%d;%d;%dm%s\027[0m" r g b text
+let highlight_text r g b text = Printf.sprintf "\027[38;2;%d;%d;%dm%s\027[0m" r g b text
+let highlight_bg r g b text = Printf.sprintf "\027[48;2;%d;%d;%dm%s\027[0m" r g b text
 
 let strip_path_delimiters path =
   let path = 
@@ -276,17 +277,35 @@ let strip_path_delimiters path =
   path
 
 let draw_status edtr =
-    let highlight = rgb 212 118 215 in
+    let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "status" ) in
+    let gUcO_B = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "statusOrnaments" ) in
+    log loggr (Highlight.get_ui_colors (Highlight.get_theme () ) "status");
+    
+    let status_fg_r = int_of_string (List.nth gUcO 0) in
+    let status_fg_g = int_of_string (List.nth gUcO 1) in
+    let status_fg_b = int_of_string (List.nth gUcO 2) in
+    let status_bg_r = int_of_string (List.nth gUcO 4) in
+    let status_bg_g = int_of_string (List.nth gUcO 5) in
+    let status_bg_b = int_of_string (List.nth gUcO 6) in
+    
+    let ornament_fg_r = int_of_string (List.nth gUcO_B 0) in
+    let ornament_fg_g = int_of_string (List.nth gUcO_B 1) in
+    let ornament_fg_b = int_of_string (List.nth gUcO_B 2) in
+    let ornament_bg_r = int_of_string (List.nth gUcO_B 4) in
+    let ornament_bg_g = int_of_string (List.nth gUcO_B 5) in
+    let ornament_bg_b = int_of_string (List.nth gUcO_B 6) in
+    
     let has_pending = is_some edtr.pending in
     let mode_str = string_of_mode edtr.mode in
 
     let content, visual_len = if edtr.status.status_i = 0 then
         let base = mode_str in
-        let visual = (if has_pending then 2+(match edtr.pending with Some c -> String.length c | None -> 0) else 0) + String.length base in
-        let display = (if has_pending then (highlight ((match edtr.pending with Some c -> c | None -> "") ^ "* ")) else "") ^ base in
+        let visual = (if has_pending then 3+(match edtr.pending with Some c -> String.length c | None -> 0) else 0) + String.length base + (if edtr.status.overlap || has_pending then 0 else 1) in
+        let display = (if has_pending then " " ^ (match edtr.pending with Some c -> c | None -> "") ^ "* " else (if edtr.status.overlap then "" else " ")) ^ base in
         (display, visual)
         else
-            let text = Printf.sprintf "%d : %d | %s" 
+            let text = Printf.sprintf "%s%d : %d | %s" 
+      (if edtr.status.overlap || has_pending then "" else " ")
       (edtr.viewport.top + edtr.cy) 
       (edtr.viewport.left + edtr.cx)
       (Printf.sprintf "%s / %s" 
@@ -298,33 +317,39 @@ let draw_status edtr =
            in
            Filename.basename (Filename.dirname (Unix.realpath path))
          with _ -> "-")
-
         (match edtr.buffer.file with Some fileN -> strip_path_delimiters fileN | None -> "-")) in
             (text, String.length text)
             in
 
     cursor_to edtr.status.status_row edtr.status.status_start;
-    Printf.printf "%s" (String.make edtr.status.status_len ' ');
+    Printf.printf "\027[48;2;%d;%d;%dm%s\027[0m" status_bg_r status_bg_g status_bg_b (String.make edtr.status.status_len ' ');
 
-    let new_status_len = visual_len + 5 in
+    let new_status_len = visual_len + 4 in
     let new_status_start = fst(edtr.size) - new_status_len + 1 in
     let new_status_row = snd edtr.size in
 
     cursor_to new_status_row (new_status_start - (if edtr.status.overlap then 2 else 0));
-    Printf.printf "%s" (ANSITerminal.sprintf [ANSITerminal.Bold] "%s" 
-    (if edtr.status.overlap then (highlight "| ") else "") ^ content ^ (highlight " <~"));
+    
+    let status_bar = 
+        (if edtr.status.overlap then 
+            Printf.sprintf "\027[38;2;%d;%d;%d;48;2;%d;%d;%dm| \027[0m" 
+                ornament_fg_r ornament_fg_g ornament_fg_b 
+                ornament_bg_r ornament_bg_g ornament_bg_b
+        else "") ^
+        Printf.sprintf "\027[38;2;%d;%d;%d;48;2;%d;%d;%dm%s\027[0m" 
+            status_fg_r status_fg_g status_fg_b 
+            status_bg_r status_bg_g status_bg_b
+            content ^
+        Printf.sprintf "\027[38;2;%d;%d;%d;48;2;%d;%d;%dm <~\027[0m" 
+            ornament_fg_r ornament_fg_g ornament_fg_b 
+            ornament_bg_r ornament_bg_g ornament_bg_b
+    in
+    
+    Printf.printf "%s" status_bar;
 
     edtr.status.status_len <- new_status_len;
     edtr.status.status_start <- new_status_start;
-    
     edtr.status.status_row <- new_status_row
-
-(* 
-    non shift
-    ->>  
-
-    with shift
-*)
 
 let highlight edtr buf = Highlight.highlight buf edtr.buffer.highlight_conf
 
@@ -384,6 +409,7 @@ let skip_visible_chars_with_escape s start count =
 
 let draw_viewport edtr = 
     let vpbuf = get_vp_buf edtr in
+    let vpbuf_split = String.split_on_char '\n' vpbuf in
     let content_full = String.split_on_char '\n' (let temp = highlight edtr (vpbuf) in  temp) in
 
     for i=1 to snd edtr.size  do
@@ -404,13 +430,13 @@ let draw_viewport edtr =
             else 
                 fst edtr.size
         in
-        
+        if i = snd edtr.size then (
+            edtr.status.overlap <- if String.length (List.nth vpbuf_split (i-1)) > max_len then true else false
+        );
         let foc = 
             if visible_length_of !foc_ > max_len then (
-                if i = snd edtr.size then edtr.status.overlap <- true;
                 truncate_to_visible !foc_ max_len
             ) else (
-                if i = snd edtr.size then edtr.status.overlap <- false;
                 !foc_
             )
         in
@@ -746,7 +772,7 @@ let rec eval_act action edtr =
         )
     );
 
-    adjust_inline_bounds edtr
+    adjust_inline_bounds edtr; draw edtr
 
 (* LOOP *)
 

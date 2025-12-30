@@ -5,11 +5,11 @@ use std::{fs, usize};
 use std::path::Path;
 use std::str::FromStr;
 use serde_json::{Map, Value};
-use std::ffi::{CString};
+use std::ffi::{CString, CStr};
 use std::os::raw::c_char;
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct RGB {
     r: u8,
     g: u8,
@@ -35,6 +35,7 @@ struct TokenStyle {
 struct Theme {
     name: String,
     style: Style,
+    ui_styles: HashMap<String, Style>,
     tok_scopes: HashMap<String, usize>,
     tok_styles: Vec<Style>
 }
@@ -123,7 +124,22 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
         });
     });
 
-    return Theme {name, style, tok_scopes, tok_styles };
+    let mut ui_styles = HashMap::new();
+    ui_styles.insert("status".to_string(), Style{
+        fg: Some(hex_to_rgb((json.colors.get("editor.foreground").unwrap().as_str()).unwrap_or("#FFFFFF"))),
+        bg: Some(hex_to_rgb((json.colors.get("statusBar.background").unwrap().as_str()).unwrap_or("#FFFFFF"))),
+        italic: false,
+        bold: false
+    });
+    ui_styles.insert("statusOrnaments".to_string(), Style{
+        fg: Some(hex_to_rgb((json.colors.get("tab.activeForeground").unwrap().as_str()).unwrap_or("#FFFFFF"))),
+        bg: Some(hex_to_rgb((json.colors.get("sideBar.background").unwrap().as_str()).unwrap_or("#FFFFFF"))),
+        italic: false,
+        bold: false
+    });
+
+
+    return Theme {name, style, ui_styles, tok_scopes, tok_styles };
 }
 
 #[cfg(test)]
@@ -280,6 +296,16 @@ pub extern "C" fn highlight_ocaml_with_width(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn get_ui_colors(theme: *mut Theme, key: *const u8) -> *mut c_char {
+    let styl = (*theme).ui_styles.get(CStr::from_ptr(key as *const c_char).to_str().unwrap()).unwrap();
+    let displ_fg = format!("{} {} {} {}", styl.fg.clone().unwrap().r, styl.fg.clone().unwrap().g, styl.fg.clone().unwrap().b, styl.fg.clone().unwrap().a);
+    let displ_bg = format!("{} {} {} {}", styl.bg.clone().unwrap().r, styl.bg.clone().unwrap().g, styl.bg.clone().unwrap().b, styl.bg.clone().unwrap().a);
+    let displ_i = i32::from(styl.italic);
+    let displ_b = i32::from(styl.bold);
+    CString::new(format!("{displ_fg} {displ_bg} {displ_i} {displ_b}")).unwrap().into_raw()
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn highlight_ocaml(
     source_ptr: *const u8,
     source_len: usize,
@@ -361,5 +387,17 @@ pub extern "C" fn free_rust_string(s: *mut c_char) {
     }
 }
 
-// UI COLORS
-// STATUS BACKGROUND ; expose fns
+#[unsafe(no_mangle)]
+pub extern "C" fn get_theme() -> *mut Theme {
+    Box::into_raw(Box::new(parse_syntax_highlight_src("theme.json")))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn free_theme(theme: *mut Theme) {
+    if theme.is_null() {
+        return;
+    }
+    unsafe {
+        drop(Box::from_raw(theme));
+    }
+}
