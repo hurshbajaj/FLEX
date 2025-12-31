@@ -25,7 +25,7 @@ type action =
 
     | Act_StatusI | Act_ToggleStatus
 
-    | Act_VpShiftX 
+    | Act_VpShiftX | Act_XVpShiftX
 
     | Act_Pending of string
     | Act_Undo
@@ -116,7 +116,7 @@ let viewport_of_ctx buffer size =
         left = 0;
     }
 
-let real_length edtr = min (fst edtr.size) ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 )
+let real_length edtr = ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 )
 
 let adjust_inline_bounds edtr = 
     let real_length_ = real_length edtr in
@@ -126,7 +126,6 @@ let adjust_inline_bounds edtr =
         if ( edtr.cx > visible_length+1) then edtr.cx <- visible_length + (if String.trim (List.nth edtr.buffer.lines (edtr.cy + edtr.viewport.top - 1)) = "" then 0 else 1)
     )else if ( edtr.cx > visible_length) then edtr.cx <- visible_length;
     if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap)
-(* -> BUF *)
 
 let buffer_of_file fileG = 
     let conf = Highlight.get_lang_config () in

@@ -99,9 +99,20 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
 
     let json: JSON_SH_INTER = serde_json::from_str(&json_string).unwrap();
     let name = json.name;
-    let fg = Some(hex_to_rgb((json.colors.get("editor.foreground").unwrap().as_str()).unwrap_or("#FFFFFF")));
-    let bg = Some ( hex_to_rgb((json.colors.get("editor.background").unwrap().as_str()).unwrap_or("#FFFFFF")) );
-    let style = Style {fg, bg, italic: false, bold: false};
+
+    let editor_fg = json.colors.get("editor.foreground")
+        .or_else(|| json.colors.get("foreground"))
+        .and_then(|v| v.as_str())
+        .expect("foreground missing");
+
+    let editor_bg = json.colors.get("editor.background")
+        .or_else(|| json.colors.get("background"))
+        .and_then(|v| v.as_str())
+        .expect("background missing");
+
+    let fg = Some(hex_to_rgb(editor_fg));
+    let bg = Some(hex_to_rgb(editor_bg));
+    let style = Style { fg, bg, italic: false, bold: false };
 
     let mut tok_scopes = HashMap::new();
     let mut tok_styles = vec![];
@@ -109,37 +120,66 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
     json.token_colors.iter().enumerate().for_each(|x| {
         let i = x.0;
         let tc = x.1;
-        tc.get("scope").iter().for_each(|s| {tok_scopes.insert(s.to_string(), i);});
+        tc.get("scope").iter().for_each(|s| {
+            tok_scopes.insert(s.to_string(), i);
+        });
         tok_styles.push(Style{
             fg: tc.get("settings")
-            .and_then(|s| s.get("foreground"))
-            .and_then(|b| b.as_str())
-            .map(|s| hex_to_rgb(s)),
+                .and_then(|s| s.get("foreground"))
+                .and_then(|b| b.as_str())
+                .map(|s| hex_to_rgb(s)),
             bg: tc.get("settings")
-            .and_then(|s| s.get("background"))
-            .and_then(|b| b.as_str())
-            .map(|s| hex_to_rgb(s)),
-            italic: { let temp_x = tc.get("settings").unwrap().get("fontStyle").and_then(|s|{Some(s.as_str().unwrap().contains("italic ") || s.as_str().unwrap().split_whitespace().last().unwrap() == "italic")}); temp_x.unwrap_or(false) },
-            bold: { let temp_x = tc.get("settings").unwrap().get("fontStyle").and_then(|s|{Some(s.as_str().unwrap().contains("bold ") || s.as_str().unwrap().split_whitespace().last().unwrap() == "bold")}); temp_x.unwrap_or(false) }
+                .and_then(|s| s.get("background"))
+                .and_then(|b| b.as_str())
+                .map(|s| hex_to_rgb(s)),
+            italic: {
+                let temp_x = tc.get("settings")
+                    .and_then(|s| s.get("fontStyle"))
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.contains("italic ") || s.split_whitespace().last().unwrap_or("") == "italic");
+                temp_x.unwrap_or(false)
+            },
+            bold: {
+                let temp_x = tc.get("settings")
+                    .and_then(|s| s.get("fontStyle"))
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.contains("bold ") || s.split_whitespace().last().unwrap_or("") == "bold");
+                temp_x.unwrap_or(false)
+            }
         });
     });
 
     let mut ui_styles = HashMap::new();
+
+    let status_bg = json.colors.get("statusBar.background")
+        .and_then(|v| v.as_str())
+        .unwrap_or(editor_bg);
+
     ui_styles.insert("status".to_string(), Style{
-        fg: Some(hex_to_rgb((json.colors.get("editor.foreground").unwrap().as_str()).unwrap_or("#FFFFFF"))),
-        bg: Some(hex_to_rgb((json.colors.get("statusBar.background").unwrap().as_str()).unwrap_or("#FFFFFF"))),
+        fg: Some(hex_to_rgb(editor_fg)),
+        bg: Some(hex_to_rgb(status_bg)),
         italic: false,
         bold: false
     });
+
+    //-------------------------------------------------------------
+
+    let tab_fg = json.colors.get("tab.activeForeground")
+        .and_then(|v| v.as_str())
+        .unwrap_or(editor_fg);
+
+    let sidebar_bg = json.colors.get("sideBar.background")
+        .and_then(|v| v.as_str())
+        .unwrap_or(editor_bg);
+
     ui_styles.insert("statusOrnaments".to_string(), Style{
-        fg: Some(hex_to_rgb((json.colors.get("tab.activeForeground").unwrap().as_str()).unwrap_or("#FFFFFF"))),
-        bg: Some(hex_to_rgb((json.colors.get("sideBar.background").unwrap().as_str()).unwrap_or("#FFFFFF"))),
+        fg: Some(hex_to_rgb(tab_fg)),
+        bg: Some(hex_to_rgb(sidebar_bg)),
         italic: false,
         bold: false
     });
 
-
-    return Theme {name, style, ui_styles, tok_scopes, tok_styles };
+    Theme { name, style, ui_styles, tok_scopes, tok_styles }
 }
 
 #[cfg(test)]
@@ -207,21 +247,22 @@ pub extern "C" fn highlight_ocaml_with_width(
     source_ptr: *const u8,
     source_len: usize,
     config: *mut HighlightConfiguration,
-    terminal_width: usize,
+    mut terminal_width: usize,
 ) -> *mut c_char {
     let source = unsafe { std::slice::from_raw_parts(source_ptr, source_len) };
     let theme = parse_syntax_highlight_src("theme.json");
     let tok_styles = &theme.tok_styles;
     let tok_scopes = &theme.tok_scopes;
     let default_style = &theme.style;
-    
+
     let names: Vec<String> = tok_scopes.keys().cloned().collect();
-    
+
     let mut highlighter = Highlighter::new();
     let highlights = highlighter
         .highlight(unsafe { &*config }, source, None, |_| None)
         .unwrap();
-    
+
+    let original_width = terminal_width;
     let mut out = String::new();
     let mut last = 0usize;
     let mut current_style: Option<&Style> = None;
@@ -244,57 +285,71 @@ pub extern "C" fn highlight_ocaml_with_width(
             HighlightEvent::Source { start, end } => {
                 if start > last {
                     let gap_text = std::str::from_utf8(&source[last..start]).unwrap();
+                    for line in gap_text.split('\n') {
+                        while line.len() > terminal_width {
+                            terminal_width += original_width;
+                        }
+                    }
                     apply_style_incremental(
-                        gap_text, 
-                        default_style, 
-                        default_style, 
-                        &mut out, 
+                        gap_text,
+                        default_style,
+                        default_style,
+                        &mut out,
                         &mut last_applied_style,
                         &mut current_line_length,
-                        terminal_width
+                        terminal_width,
                     );
                 }
-                
+
                 let text = std::str::from_utf8(&source[start..end]).unwrap();
+                for line in text.split('\n') {
+                    while line.len() > terminal_width {
+                        terminal_width += original_width;
+                    }
+                }
                 let style_to_use = current_style.unwrap_or(default_style);
                 apply_style_incremental(
-                    text, 
-                    style_to_use, 
-                    default_style, 
-                    &mut out, 
+                    text,
+                    style_to_use,
+                    default_style,
+                    &mut out,
                     &mut last_applied_style,
                     &mut current_line_length,
-                    terminal_width
+                    terminal_width,
                 );
-                
+
                 last = end;
             }
         }
     }
-    
+
     if last < source.len() {
         let remaining = std::str::from_utf8(&source[last..]).unwrap();
+        for line in remaining.split('\n') {
+            while line.len() > terminal_width {
+                terminal_width += original_width;
+            }
+        }
         apply_style_incremental(
-            remaining, 
-            default_style, 
-            default_style, 
-            &mut out, 
+            remaining,
+            default_style,
+            default_style,
+            &mut out,
             &mut last_applied_style,
             &mut current_line_length,
-            terminal_width
+            terminal_width,
         );
     }
-    
+
     if current_line_length > 0 && current_line_length < terminal_width {
         let padding = terminal_width - current_line_length;
         out.push_str(&" ".repeat(padding));
     }
-    
+
     out.push_str("\x1b[0m");
-    
+
     CString::new(out).unwrap().into_raw()
 }
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn get_ui_colors(theme: *mut Theme, key: *const u8) -> *mut c_char {
     let styl = (*theme).ui_styles.get(CStr::from_ptr(key as *const c_char).to_str().unwrap()).unwrap();
