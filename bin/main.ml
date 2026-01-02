@@ -71,7 +71,7 @@ let draw_status edtr =
             in
 
     cursor_to edtr.status.status_row edtr.status.status_start;
-    Printf.printf "\027[48;2;%d;%d;%dm%s\027[0m" status_bg_r status_bg_g status_bg_b (String.make edtr.status.status_len ' ');
+    Printf.printf "\027[48;2;%d;%d;%dm%s\027[0m" ornament_bg_r ornament_bg_g ornament_bg_b (String.make edtr.status.status_len ' ');
 
     let new_status_len = visual_len + 4 in
     let new_status_start = fst(edtr.size) - new_status_len + 1 in
@@ -83,14 +83,14 @@ let draw_status edtr =
         (if edtr.status.overlap then 
             Printf.sprintf "\027[38;2;%d;%d;%d;48;2;%d;%d;%dm| \027[0m" 
                 ornament_fg_r ornament_fg_g ornament_fg_b 
-                ornament_bg_r ornament_bg_g ornament_bg_b
+                status_bg_r status_bg_g status_bg_b
         else "") ^
         (match pending_part with
          | Some p -> Printf.sprintf "\027[38;2;%d;%d;%d;48;2;%d;%d;%dm%s \027[0m" 
                         status_fg_r status_fg_g status_fg_b 
                         status_bg_r status_bg_g status_bg_b p
          | None -> "") ^
-        Printf.sprintf "\027[38;2;%d;%d;%d;48;2;%d;%d;%dm%s\027[0m" 
+        Printf.sprintf "\027[38;2;%d;%d;%d;48;2;%d;%d;%dm%s \027[0m" 
             status_fg_r status_fg_g status_fg_b 
             status_bg_r status_bg_g status_bg_b
             content ^
@@ -125,7 +125,7 @@ let draw_viewport edtr =
         | None -> ());
         
         let max_len = 
-            if i = snd edtr.size then 
+            if i = snd edtr.size && edtr.status.toggled then 
                 edtr.status.status_start - edtr.status.gap
             else 
                 fst edtr.size
@@ -141,8 +141,11 @@ let draw_viewport edtr =
             )
         in
         print_string foc;
-        let crnt_vp = try ( max 0 (  (visible_length_of content - 1) / fst edtr.size ) ) with | Division_by_zero -> 0 in
-        if edtr.act_info.vp_shift < crnt_vp then edtr.act_info.vp_shift <- crnt_vp
+let crnt_vp = try ( max 0 ( (visible_length_of (List.nth vpbuf_split (i-1))) / fst edtr.size ) ) with | Division_by_zero -> 0 in
+        if edtr.act_info.vp_shift < crnt_vp then edtr.act_info.vp_shift <- crnt_vp;
+        log loggr "-------------------";
+        log loggr !foc_;
+        log loggr (string_of_int (visible_length_of content))
         
     done
 
@@ -404,8 +407,8 @@ let rec eval_act action edtr =
         )
         | Act_ToBufferBottom -> (
             if edtr.viewport.left = 0 then(
-                edtr.viewport.top <- max (List.length edtr.buffer.lines - snd edtr.size - 1) 1;
-                edtr.cy <- List.length edtr.buffer.lines - edtr.viewport.top;
+                edtr.viewport.top <- max (List.length edtr.buffer.lines - snd edtr.size - 1) 0;
+                edtr.cy <- List.length edtr.buffer.lines - edtr.viewport.top - 1;
                 edtr.cx <- real_length edtr
             )
         )
@@ -414,7 +417,8 @@ let rec eval_act action edtr =
             let line = List.nth edtr.buffer.lines (snd pos) in
             let line_ = insert_str line (fst pos) (Some c) in
             edtr.buffer.lines <- lst_replace_at (snd pos) line_ edtr.buffer.lines;
-            edtr.cx <- (fst pos-edtr.viewport.left) + 2
+            edtr.cx <- (fst pos-edtr.viewport.left) + 2;
+            if edtr.cx > (fst edtr.size) then (edtr.viewport.left <- edtr.viewport.left + fst edtr.size; edtr.cx <- 1)
         )
         | Act_I_RmChar -> ( 
             if edtr.cx > 1 then (
@@ -442,18 +446,16 @@ let rec eval_act action edtr =
             edtr.cx <- (strt+1)
         )
         | Act_AddCharStr (l, strt, _, content) -> ( 
-            log loggr "start add char str";
             cy_into_vp edtr (l); 
             let cntnt_lst = String.split_on_char '\n' content in 
             if List.length cntnt_lst = 1 then(
-                ( eval_act (Act_I_AddStr ( (List.hd cntnt_lst), (max 1 strt-1, l))) edtr;log loggr "FUUUUU" ; edtr.cx <- (strt - 1 + (String.length content)) )
+                ( eval_act (Act_I_AddStr ( (List.hd cntnt_lst), (max 1 strt-1, l))) edtr; edtr.cx <- (strt - 1 + (String.length content)) )
             )
             else (
                 eval_act (Act_I_AddStr ( (List.hd cntnt_lst), (max 1 strt-1, l))) edtr;
                 List.iteri (fun i str -> eval_act (Act_InsertLine(l+i, str)) edtr) (List.tl cntnt_lst)
             );
 
-            log loggr "end add char str";
         )
         | Act_I_InsertLine -> (
             let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
@@ -555,6 +557,7 @@ let () =
     } in
 
     Sys.set_signal Sys.sigwinch (Sys.Signal_handle (fun _ -> 
+        edtr.viewport.left <- 0;
         let ns = ANSITerminal.size () in 
         edtr.size <- ns; 
         edtr.cx <- min edtr.cx (fst ns); 
@@ -566,6 +569,3 @@ let () =
     ));
 
     run edtr
-(*
-KILLING CHARS
-*)

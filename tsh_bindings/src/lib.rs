@@ -40,7 +40,6 @@ struct Theme {
     tok_styles: Vec<Style>
 }
 
-//vsc-themes
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JSON_SH_INTER {
@@ -57,18 +56,15 @@ fn hex_to_rgb(hex: &str) -> RGB {
     
     let (full_hex, alpha) = match hex.len() {
         3 => {
-            // #RGB -> #RRGGBB
             let r = hex.chars().nth(0).unwrap();
             let g = hex.chars().nth(1).unwrap();
             let b = hex.chars().nth(2).unwrap();
             (format!("{}{}{}{}{}{}", r, r, g, g, b, b), 255u8)
         },
         6 => {
-            // #RRGGBB
             (hex.to_string(), 255u8)
         },
         8 => {
-            // #RRGGBBAA
             let a = u8::from_str_radix(&hex[6..8], 16).ok().unwrap();
             (hex[0..6].to_string(), a)
         },
@@ -84,6 +80,79 @@ fn hex_to_rgb(hex: &str) -> RGB {
     let b = u8::from_str_radix(&full_hex[4..6], 16).ok().unwrap();
     
     RGB { r, g, b, a: alpha }
+}
+
+fn map_textmate_to_capture(textmate_scope: &str) -> Option<String> {
+    let scope_lower = textmate_scope.to_lowercase();
+    
+    if scope_lower.contains("punctuation.separator") || scope_lower.contains("punctuation.delimiter") {
+        return Some("punctuation.delimiter".to_string());
+    }
+    if scope_lower.contains("punctuation.bracket") || scope_lower.contains("meta.brace") {
+        return Some("punctuation.bracket".to_string());
+    }
+    if scope_lower.contains("punctuation.special") {
+        return Some("punctuation.special".to_string());
+    }
+    if scope_lower.contains("keyword") {
+        return Some("keyword".to_string());
+    }
+    if scope_lower.contains("operator") {
+        return Some("operator".to_string());
+    }
+    if scope_lower.contains("constant.numeric") || scope_lower.contains("constant.language.numeric") {
+        return Some("number".to_string());
+    }
+    if scope_lower.contains("constant") {
+        return Some("constant".to_string());
+    }
+    if scope_lower.contains("string.regexp") || scope_lower.contains("string.special") {
+        return Some("string.special".to_string());
+    }
+    if scope_lower.contains("constant.character.escape") || scope_lower.contains("escape") {
+        return Some("escape".to_string());
+    }
+    if scope_lower.contains("string") {
+        return Some("string".to_string());
+    }
+    if scope_lower.contains("variable.parameter") {
+        return Some("variable.parameter".to_string());
+    }
+    if scope_lower.contains("variable") {
+        return Some("variable".to_string());
+    }
+    if scope_lower.contains("entity.name.function") || scope_lower.contains("support.function.builtin") {
+        return Some("function.builtin".to_string());
+    }
+    if scope_lower.contains("entity.name.method") || scope_lower.contains("support.function.method") {
+        return Some("function.method".to_string());
+    }
+    if scope_lower.contains("entity.name.function") || scope_lower.contains("support.function") {
+        return Some("function".to_string());
+    }
+    if scope_lower.contains("entity.name.type.class") || scope_lower.contains("support.class") {
+        return Some("type.builtin".to_string());
+    }
+    if scope_lower.contains("entity.name.type") || scope_lower.contains("support.type") {
+        return Some("type".to_string());
+    }
+    if scope_lower.contains("entity.name.constructor") || scope_lower.contains("constructor") {
+        return Some("constructor".to_string());
+    }
+    if scope_lower.contains("entity.name.module") || scope_lower.contains("entity.name.namespace") {
+        return Some("module".to_string());
+    }
+    if scope_lower.contains("entity.name.property") || scope_lower.contains("variable.other.property") {
+        return Some("property".to_string());
+    }
+    if scope_lower.contains("entity.name.tag") || scope_lower.contains("meta.tag") {
+        return Some("tag".to_string());
+    }
+    if scope_lower.contains("comment") {
+        return Some("comment".to_string());
+    }
+    
+    None
 }
 
 fn parse_syntax_highlight_src (file_name: &str) -> Theme {
@@ -121,7 +190,19 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
         let i = x.0;
         let tc = x.1;
         tc.get("scope").iter().for_each(|s| {
-            tok_scopes.insert(s.to_string(), i);
+            if let Some(scope_str) = s.as_str() {
+                if let Some(capture_name) = map_textmate_to_capture(scope_str) {
+                    tok_scopes.insert(capture_name, i);
+                }
+            } else if let Some(scope_arr) = s.as_array() {
+                for scope_val in scope_arr {
+                    if let Some(scope_str) = scope_val.as_str() {
+                        if let Some(capture_name) = map_textmate_to_capture(scope_str) {
+                            tok_scopes.insert(capture_name, i);
+                        }
+                    }
+                }
+            }
         });
         tok_styles.push(Style{
             fg: tc.get("settings")
@@ -162,8 +243,6 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
         bold: false
     });
 
-    //-------------------------------------------------------------
-
     let tab_fg = json.colors.get("tab.activeForeground")
         .and_then(|v| v.as_str())
         .unwrap_or(editor_fg);
@@ -185,9 +264,22 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
+    
     #[test]
-    fn json_parse () {
-        println!("{:?}", parse_syntax_highlight_src("theme.json").tok_styles[50] );
+    fn print_theme_mapping() {
+        let theme = parse_syntax_highlight_src("theme.json");
+        let mut names: Vec<String> = theme.tok_scopes.keys().cloned().collect();
+        names.sort();
+        
+        println!("\nCapture name -> Style index -> Colors:");
+        for name in &names {
+            if let Some(&style_idx) = theme.tok_scopes.get(name) {
+                if let Some(style) = theme.tok_styles.get(style_idx) {
+                    println!("{}: index {} -> fg: {:?}, bg: {:?}, bold: {}, italic: {}", 
+                        name, style_idx, style.fg, style.bg, style.bold, style.italic);
+                }
+            }
+        }
     }
 }
 
@@ -214,7 +306,8 @@ fn fetch_lang_name() -> String {
 }
 fn build_config() -> HighlightConfiguration {
     let temp_a = parse_syntax_highlight_src("theme.json");
-    let names = temp_a.tok_scopes.keys().collect::<Vec<&String>>();
+    let mut names = temp_a.tok_scopes.keys().collect::<Vec<&String>>();
+    names.sort();
 
     let (h, i, l) = fetch_queries();
     let mut cfg = HighlightConfiguration::new(
@@ -243,11 +336,21 @@ pub extern "C" fn get_terminal_width() -> usize {
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn get_ui_colors(theme: *mut Theme, key: *const u8) -> *mut c_char {
+    let styl = (*theme).ui_styles.get(CStr::from_ptr(key as *const c_char).to_str().unwrap()).unwrap();
+    let displ_fg = format!("{} {} {} {}", styl.fg.clone().unwrap().r, styl.fg.clone().unwrap().g, styl.fg.clone().unwrap().b, styl.fg.clone().unwrap().a);
+    let displ_bg = format!("{} {} {} {}", styl.bg.clone().unwrap().r, styl.bg.clone().unwrap().g, styl.bg.clone().unwrap().b, styl.bg.clone().unwrap().a);
+    let displ_i = i32::from(styl.italic);
+    let displ_b = i32::from(styl.bold);
+    CString::new(format!("{displ_fg} {displ_bg} {displ_i} {displ_b}")).unwrap().into_raw()
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn highlight_ocaml_with_width(
     source_ptr: *const u8,
     source_len: usize,
     config: *mut HighlightConfiguration,
-    mut terminal_width: usize,
+    terminal_width: usize,
 ) -> *mut c_char {
     let source = unsafe { std::slice::from_raw_parts(source_ptr, source_len) };
     let theme = parse_syntax_highlight_src("theme.json");
@@ -255,14 +358,23 @@ pub extern "C" fn highlight_ocaml_with_width(
     let tok_scopes = &theme.tok_scopes;
     let default_style = &theme.style;
 
-    let names: Vec<String> = tok_scopes.keys().cloned().collect();
+    let source_str = std::str::from_utf8(source).unwrap();
+    let original_width = terminal_width;
+    let mut final_width = terminal_width;
+    
+    for line in source_str.split('\n') {
+        while line.len() > final_width {
+            final_width += original_width;
+        }
+    }
 
+    let mut names: Vec<String> = tok_scopes.keys().cloned().collect();
+    names.sort();
     let mut highlighter = Highlighter::new();
     let highlights = highlighter
         .highlight(unsafe { &*config }, source, None, |_| None)
         .unwrap();
 
-    let original_width = terminal_width;
     let mut out = String::new();
     let mut last = 0usize;
     let mut current_style: Option<&Style> = None;
@@ -285,11 +397,6 @@ pub extern "C" fn highlight_ocaml_with_width(
             HighlightEvent::Source { start, end } => {
                 if start > last {
                     let gap_text = std::str::from_utf8(&source[last..start]).unwrap();
-                    for line in gap_text.split('\n') {
-                        while line.len() > terminal_width {
-                            terminal_width += original_width;
-                        }
-                    }
                     apply_style_incremental(
                         gap_text,
                         default_style,
@@ -297,16 +404,11 @@ pub extern "C" fn highlight_ocaml_with_width(
                         &mut out,
                         &mut last_applied_style,
                         &mut current_line_length,
-                        terminal_width,
+                        final_width,
                     );
                 }
 
                 let text = std::str::from_utf8(&source[start..end]).unwrap();
-                for line in text.split('\n') {
-                    while line.len() > terminal_width {
-                        terminal_width += original_width;
-                    }
-                }
                 let style_to_use = current_style.unwrap_or(default_style);
                 apply_style_incremental(
                     text,
@@ -315,7 +417,7 @@ pub extern "C" fn highlight_ocaml_with_width(
                     &mut out,
                     &mut last_applied_style,
                     &mut current_line_length,
-                    terminal_width,
+                    final_width,
                 );
 
                 last = end;
@@ -325,11 +427,6 @@ pub extern "C" fn highlight_ocaml_with_width(
 
     if last < source.len() {
         let remaining = std::str::from_utf8(&source[last..]).unwrap();
-        for line in remaining.split('\n') {
-            while line.len() > terminal_width {
-                terminal_width += original_width;
-            }
-        }
         apply_style_incremental(
             remaining,
             default_style,
@@ -337,27 +434,18 @@ pub extern "C" fn highlight_ocaml_with_width(
             &mut out,
             &mut last_applied_style,
             &mut current_line_length,
-            terminal_width,
+            final_width,
         );
     }
 
-    if current_line_length > 0 && current_line_length < terminal_width {
-        let padding = terminal_width - current_line_length;
+    if current_line_length > 0 && current_line_length < final_width {
+        let padding = final_width - current_line_length;
         out.push_str(&" ".repeat(padding));
     }
 
     out.push_str("\x1b[0m");
 
     CString::new(out).unwrap().into_raw()
-}
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn get_ui_colors(theme: *mut Theme, key: *const u8) -> *mut c_char {
-    let styl = (*theme).ui_styles.get(CStr::from_ptr(key as *const c_char).to_str().unwrap()).unwrap();
-    let displ_fg = format!("{} {} {} {}", styl.fg.clone().unwrap().r, styl.fg.clone().unwrap().g, styl.fg.clone().unwrap().b, styl.fg.clone().unwrap().a);
-    let displ_bg = format!("{} {} {} {}", styl.bg.clone().unwrap().r, styl.bg.clone().unwrap().g, styl.bg.clone().unwrap().b, styl.bg.clone().unwrap().a);
-    let displ_i = i32::from(styl.italic);
-    let displ_b = i32::from(styl.bold);
-    CString::new(format!("{displ_fg} {displ_bg} {displ_i} {displ_b}")).unwrap().into_raw()
 }
 
 #[unsafe(no_mangle)]
@@ -456,3 +544,4 @@ pub extern "C" fn free_theme(theme: *mut Theme) {
         drop(Box::from_raw(theme));
     }
 }
+//themes fix
