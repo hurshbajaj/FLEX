@@ -72,6 +72,10 @@ type color_info = {
     color: rgb_value;
 }
 
+type gutter = {
+    mutable width : int;
+}
+
 type editor = {
     buffer: buffer;
     viewport: viewport;
@@ -88,6 +92,7 @@ type editor = {
     act_info: act_info;
 
     mutable undo_lst: action list;
+    gutter: gutter;
 }
 
 let get_logger file = 

@@ -54,24 +54,24 @@ let draw_status edtr =
         (display, visual, pending)
         else
             let text = Printf.sprintf "%s%d : %d | %s" 
-      (if edtr.status.overlap || has_pending then "" else " ")
-      (edtr.viewport.top + edtr.cy) 
-      (edtr.viewport.left + edtr.cx)
-      (Printf.sprintf "%s / %s" 
-        (try
-           let path =
-             match edtr.buffer.file with
-             | Some fileN -> fileN
-             | None -> Sys.getcwd ()
-           in
-           Filename.basename (Filename.dirname (Unix.realpath path))
-         with _ -> "-")
-        (match edtr.buffer.file with Some fileN -> strip_path_delimiters fileN | None -> "-")) in
-            (text, String.length text, None)
-            in
+              (if edtr.status.overlap || has_pending then "" else " ")
+              (edtr.viewport.top + edtr.cy) 
+              (edtr.viewport.left + edtr.cx)
+              (Printf.sprintf "%s / %s" 
+                (try
+                   let path =
+                     match edtr.buffer.file with
+                     | Some fileN -> fileN
+                     | None -> Sys.getcwd ()
+                   in
+                   Filename.basename (Filename.dirname (Unix.realpath path))
+                 with _ -> "-")
+                (match edtr.buffer.file with Some fileN -> strip_path_delimiters fileN | None -> "-")) in
+                    (text, String.length text, None)
+                    in
 
-    cursor_to edtr.status.status_row edtr.status.status_start;
-    Printf.printf "\027[48;2;%d;%d;%dm%s\027[0m" ornament_bg_r ornament_bg_g ornament_bg_b (String.make edtr.status.status_len ' ');
+    cursor_to edtr.status.status_row (edtr.status.status_start - edtr.status.gap);
+    Printf.printf "\027[48;2;%d;%d;%dm%s\027[0m" ornament_bg_r ornament_bg_g ornament_bg_b (String.make (edtr.status.status_len+edtr.status.gap) ' ');
 
     let new_status_len = visual_len + 4 in
     let new_status_start = fst(edtr.size) - new_status_len + 1 in
@@ -105,18 +105,17 @@ let draw_status edtr =
     edtr.status.status_start <- new_status_start;
     edtr.status.status_row <- new_status_row
 
-let highlight edtr buf = Highlight.highlight buf edtr.buffer.highlight_conf
+let syntatic_highlight edtr buf = Highlight.highlight buf edtr.buffer.highlight_conf
 
 let draw_viewport edtr = 
     let vpbuf = get_vp_buf edtr in
     let vpbuf_split = String.split_on_char '\n' vpbuf in
-    let content_full = String.split_on_char '\n' (let temp = highlight edtr (vpbuf) in  temp) in
+    let content_full = String.split_on_char '\n' (let temp = syntatic_highlight edtr (vpbuf) in  temp) in
 
     for i=1 to snd edtr.size  do
         let real_line = (i - 1) + edtr.viewport.top in
         let content = if real_line > List.length edtr.buffer.lines - 1 then "" else ( List.nth content_full (i-1)) in
-        cursor_to i 1;
-        print_string "\027[K";
+        cursor_to i (edtr.gutter.width+1); 
         let physical_start, to_apply = skip_visible_chars_with_escape content 0 edtr.viewport.left in
         let foc_ = ref (try String.sub content physical_start (String.length content - physical_start) with | Invalid_argument _ -> "") in
 
@@ -126,9 +125,9 @@ let draw_viewport edtr =
         
         let max_len = 
             if i = snd edtr.size && edtr.status.toggled then 
-                edtr.status.status_start - edtr.status.gap
+                edtr.status.status_start - edtr.gutter.width 
             else 
-                fst edtr.size
+                fst edtr.size - edtr.gutter.width 
         in
         if i = snd edtr.size then (
             edtr.status.overlap <- if String.length (List.nth vpbuf_split (i-1)) > max_len then true else false
@@ -141,15 +140,35 @@ let draw_viewport edtr =
             )
         in
         print_string foc;
-let crnt_vp = try ( max 0 ( (visible_length_of (List.nth vpbuf_split (i-1))) / fst edtr.size ) ) with | Division_by_zero -> 0 in
+        let crnt_vp = try ( max 0 ( (visible_length_of (List.nth vpbuf_split (i-1))) / fst edtr.size ) ) with | Division_by_zero -> 0 in
         if edtr.act_info.vp_shift < crnt_vp then edtr.act_info.vp_shift <- crnt_vp;
-        log loggr "-------------------";
-        log loggr !foc_;
-        log loggr (string_of_int (visible_length_of content))
-        
+
     done
 
+let draw_guttr edtr = (
+    let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "default" ) in
+    let hl_fg = highlight_text (int_of_string (List.nth gUcO 0)) (int_of_string(List.nth gUcO 1)) (int_of_string(List.nth gUcO 2)) in
+    let hl_bg = highlight_bg (int_of_string (List.nth gUcO 4)) (int_of_string(List.nth gUcO 5)) (int_of_string(List.nth gUcO 6)) in
+    for line = edtr.viewport.top+1 to (edtr.viewport.top + snd edtr.size) do 
+        cursor_to (line - edtr.viewport.top) 1;
+        print_string "\x1b[2K";
+        let content = 
+            (
+                (
+                    String.make
+                    (String.length (string_of_int (List.length edtr.buffer.lines)) + 1 - String.length (string_of_int line))
+                    ' '
+                )
+                ^ string_of_int line ^ "  "
+            ) in
+        edtr.gutter.width <- String.length content;
+        print_string (content |> hl_bg |> hl_fg)
+
+    done
+)   
+
 let draw edtr = 
+    draw_guttr edtr;
     draw_viewport edtr;
     if edtr.status.toggled then ( draw_status edtr);
     cursor_to edtr.cy edtr.cx;
@@ -554,6 +573,9 @@ let () =
         act_info;
         pending = None;
         undo_lst = [];
+        gutter = {
+            width = 0;
+        };
     } in
 
     Sys.set_signal Sys.sigwinch (Sys.Signal_handle (fun _ -> 

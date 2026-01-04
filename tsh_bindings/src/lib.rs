@@ -16,7 +16,7 @@ struct RGB {
     b: u8,
     a: u8
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Style {
     fg: Option<RGB>,
     bg: Option<RGB>,
@@ -83,76 +83,50 @@ fn hex_to_rgb(hex: &str) -> RGB {
 }
 
 fn map_textmate_to_capture(textmate_scope: &str) -> Option<String> {
-    let scope_lower = textmate_scope.to_lowercase();
-    
-    if scope_lower.contains("punctuation.separator") || scope_lower.contains("punctuation.delimiter") {
-        return Some("punctuation.delimiter".to_string());
-    }
-    if scope_lower.contains("punctuation.bracket") || scope_lower.contains("meta.brace") {
-        return Some("punctuation.bracket".to_string());
-    }
-    if scope_lower.contains("punctuation.special") {
-        return Some("punctuation.special".to_string());
-    }
-    if scope_lower.contains("keyword") {
-        return Some("keyword".to_string());
-    }
-    if scope_lower.contains("operator") {
-        return Some("operator".to_string());
-    }
-    if scope_lower.contains("constant.numeric") || scope_lower.contains("constant.language.numeric") {
-        return Some("number".to_string());
-    }
-    if scope_lower.contains("constant") {
-        return Some("constant".to_string());
-    }
-    if scope_lower.contains("string.regexp") || scope_lower.contains("string.special") {
-        return Some("string.special".to_string());
-    }
-    if scope_lower.contains("constant.character.escape") || scope_lower.contains("escape") {
-        return Some("escape".to_string());
-    }
-    if scope_lower.contains("string") {
-        return Some("string".to_string());
-    }
-    if scope_lower.contains("variable.parameter") {
-        return Some("variable.parameter".to_string());
-    }
-    if scope_lower.contains("variable") {
-        return Some("variable".to_string());
-    }
-    if scope_lower.contains("entity.name.function") || scope_lower.contains("support.function.builtin") {
-        return Some("function.builtin".to_string());
-    }
-    if scope_lower.contains("entity.name.method") || scope_lower.contains("support.function.method") {
-        return Some("function.method".to_string());
-    }
-    if scope_lower.contains("entity.name.function") || scope_lower.contains("support.function") {
-        return Some("function".to_string());
-    }
-    if scope_lower.contains("entity.name.type.class") || scope_lower.contains("support.class") {
-        return Some("type.builtin".to_string());
-    }
-    if scope_lower.contains("entity.name.type") || scope_lower.contains("support.type") {
-        return Some("type".to_string());
-    }
-    if scope_lower.contains("entity.name.constructor") || scope_lower.contains("constructor") {
-        return Some("constructor".to_string());
-    }
-    if scope_lower.contains("entity.name.module") || scope_lower.contains("entity.name.namespace") {
-        return Some("module".to_string());
-    }
-    if scope_lower.contains("entity.name.property") || scope_lower.contains("variable.other.property") {
-        return Some("property".to_string());
-    }
-    if scope_lower.contains("entity.name.tag") || scope_lower.contains("meta.tag") {
-        return Some("tag".to_string());
-    }
-    if scope_lower.contains("comment") {
-        return Some("comment".to_string());
-    }
-    
-    None
+    let s = textmate_scope;
+
+    let capture = if s.contains("entity.name.function") {
+        "function"
+    } else if s.contains("entity.name.method") {
+        "method"
+    } else if s.contains("entity.name.type")
+        || s.contains("entity.name.class")
+        || s.contains("entity.name.struct")
+        || s.contains("entity.name.enum")
+        || s.contains("storage.type")
+    {
+        "type"
+    } else if s.contains("variable.parameter") {
+        "parameter"
+    } else if s.contains("variable.other.property")
+        || s.contains("variable.property")
+    {
+        "property"
+    } else if s.contains("variable") {
+        "variable"
+    } else if s.contains("constant.numeric")
+        || s.contains("constant.language")
+    {
+        "number"
+    } else if s.contains("string") {
+        "string"
+    } else if s.contains("keyword.operator") {
+        "operator"
+    } else if s.contains("keyword") {
+        "keyword"
+    } else if s.contains("comment") {
+        "comment"
+    } else if s.contains("support.function") {
+        "function.builtin"
+    } else if s.contains("support.type") {
+        "type.builtin"
+    } else if s.contains("punctuation") {
+        "punctuation"
+    } else {
+        return None;
+    };
+
+    Some(capture.to_string())
 }
 
 fn parse_syntax_highlight_src (file_name: &str) -> Theme {
@@ -258,6 +232,8 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
         bold: false
     });
 
+    ui_styles.insert("default".to_string(), style.clone());
+
     Theme { name, style, ui_styles, tok_scopes, tok_styles }
 }
 
@@ -343,6 +319,25 @@ pub unsafe extern "C" fn get_ui_colors(theme: *mut Theme, key: *const u8) -> *mu
     let displ_i = i32::from(styl.italic);
     let displ_b = i32::from(styl.bold);
     CString::new(format!("{displ_fg} {displ_bg} {displ_i} {displ_b}")).unwrap().into_raw()
+}
+
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
+
+pub fn log(x: impl ToString) {
+    let mut path = std::env::current_exe().unwrap();
+    path.pop();
+    path.push("../../..");
+    path.push("flex.log");
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap();
+
+    writeln!(file, "RUST FFI: {}", x.to_string()).unwrap();
 }
 
 #[unsafe(no_mangle)]
