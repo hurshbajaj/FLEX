@@ -25,6 +25,7 @@ let strip_path_delimiters path =
   path
 
 let draw_status edtr =
+    log loggr (show_status edtr.status);
     let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "status" ) in
     let gUcO_B = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "statusOrnaments" ) in
     
@@ -124,10 +125,7 @@ let draw_viewport edtr =
         | None -> ());
         
         let max_len = 
-            if i = snd edtr.size && edtr.status.toggled then 
-                edtr.status.status_start - edtr.gutter.width 
-            else 
-                fst edtr.size - edtr.gutter.width 
+                fst edtr.size - edtr.gutter.width
         in
         if i = snd edtr.size then (
             edtr.status.overlap <- if String.length (List.nth vpbuf_split (i-1)) > max_len then true else false
@@ -146,11 +144,11 @@ let draw_viewport edtr =
     done
 
 let draw_guttr edtr = (
-    let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "default" ) in
+    let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "line_no" ) in
     let hl_fg = highlight_text (int_of_string (List.nth gUcO 0)) (int_of_string(List.nth gUcO 1)) (int_of_string(List.nth gUcO 2)) in
     let hl_bg = highlight_bg (int_of_string (List.nth gUcO 4)) (int_of_string(List.nth gUcO 5)) (int_of_string(List.nth gUcO 6)) in
     for line = edtr.viewport.top+1 to (edtr.viewport.top + snd edtr.size) do 
-        cursor_to (line - edtr.viewport.top) 1;
+        cursor_to (line - edtr.viewport.top) 1 ;
         print_string "\x1b[2K";
         let content = 
             (
@@ -171,7 +169,7 @@ let draw edtr =
     draw_guttr edtr;
     draw_viewport edtr;
     if edtr.status.toggled then ( draw_status edtr);
-    cursor_to edtr.cy edtr.cx;
+    cursor_to edtr.cy (edtr.cx+edtr.gutter.width);
     flush Stdlib.stdout
 
 let cy_into_vp edtr line_no = 
@@ -352,8 +350,9 @@ let ltrim s =
   String.sub s (find 0) (len - find 0)
 
 let rec eval_act action edtr = 
+    let visible_area () = fst edtr.size - edtr.gutter.width in
     let real_length_ = real_length edtr in
-    let real_length_trim = min (fst edtr.size) ( 
+    let real_length_trim = ( 
         try max 1 
         ( String.length ( ltrim ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) ) 
         with Invalid_argument _ -> 1 
@@ -402,16 +401,16 @@ let rec eval_act action edtr =
                 )       
             )
         )
-        | Act_MovRight -> if edtr.cx = fst edtr.size then eval_act Act_VpShiftX edtr else edtr.cx <- edtr.cx + 1;
+        | Act_MovRight -> if edtr.cx = visible_area () then eval_act Act_VpShiftX edtr else edtr.cx <- edtr.cx + 1;
         | Act_MovLeft -> if edtr.cx <> 1 then edtr.cx <- edtr.cx - 1 else eval_act Act_XVpShiftX edtr
 
-        | Act_VpShiftX -> edtr.viewport.left <- (if ( edtr.viewport.left / fst edtr.size = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + fst edtr.size);  edtr.cx <- 1
-        | Act_XVpShiftX -> edtr.viewport.left <-  edtr.viewport.left - fst edtr.size; if edtr.viewport.left < 0 then edtr.viewport.left <- 0 else edtr.cx <- (fst edtr.size) 
+        | Act_VpShiftX -> edtr.viewport.left <- (if ( edtr.viewport.left / (visible_area ()) = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + visible_area ());  edtr.cx <- 1
+        | Act_XVpShiftX -> edtr.viewport.left <-  edtr.viewport.left - (visible_area ()); if edtr.viewport.left < 0 then edtr.viewport.left <- 0 else edtr.cx <- (visible_area ()) 
 
         | Act_PageUp -> if edtr.viewport.left = 0 then (edtr.viewport.top <- max 0 (edtr.viewport.top - snd edtr.size); edtr.cx <- 1; edtr.cy <- 1)
         | Act_PageDown -> if edtr.viewport.left = 0 then ( edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size)
-        | Act_EoL -> edtr.cx <- min (fst edtr.size) (real_length_ - edtr.viewport.left)
-        | Act_BoL -> if edtr.viewport.left = 0 then edtr.cx <- real_length_ - real_length_trim + 1 else edtr.cx <- 1
+        | Act_EoL -> edtr.cx <- min (visible_area ()) (real_length_ - edtr.viewport.left)
+        | Act_BoL -> if edtr.viewport.left = 0 then edtr.cx <- (real_length_) - real_length_trim + 1 else edtr.cx <- 1
         | Act_CenterLine line -> (
             let atline = edtr.viewport.top + edtr.cy in
             let fTOP = ( ( edtr.cy )  - (snd edtr.size/2) ) + edtr.viewport.top in
@@ -557,9 +556,9 @@ let () =
         status_len = 0;
         status_start = fst size;
         status_row = snd size;
-        overlap = false;
-        gap = 4;
-        gap_ = 4;
+        overlap = true;
+        gap = 3;
+        gap_ = 3;
         toggled = true;
     } in
     let edtr = {

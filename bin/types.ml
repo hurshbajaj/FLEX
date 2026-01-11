@@ -62,7 +62,7 @@ type status = {
     mutable gap: int;
     mutable gap_: int;
     mutable toggled: bool;
-}
+}[@@deriving show]
 
 type rgb_value = int * int *int
 

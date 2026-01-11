@@ -206,10 +206,13 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
 
     let mut ui_styles = HashMap::new();
 
+    /* UI STYLES */
+
+    ui_styles.insert("default".to_string(), style.clone());
+
     let status_bg = json.colors.get("statusBar.background")
         .and_then(|v| v.as_str())
         .unwrap_or(editor_bg);
-
     ui_styles.insert("status".to_string(), Style{
         fg: Some(hex_to_rgb(editor_fg)),
         bg: Some(hex_to_rgb(status_bg)),
@@ -220,11 +223,9 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
     let tab_fg = json.colors.get("tab.activeForeground")
         .and_then(|v| v.as_str())
         .unwrap_or(editor_fg);
-
     let sidebar_bg = json.colors.get("sideBar.background")
         .and_then(|v| v.as_str())
         .unwrap_or(editor_bg);
-
     ui_styles.insert("statusOrnaments".to_string(), Style{
         fg: Some(hex_to_rgb(tab_fg)),
         bg: Some(hex_to_rgb(sidebar_bg)),
@@ -232,7 +233,9 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
         bold: false
     });
 
-    ui_styles.insert("default".to_string(), style.clone());
+    ui_styles.insert("line_no".to_string(), Style { fg: Some(hex_to_rgb( json.colors.get("editorLineNumber.foreground")
+        .and_then(|v| v.as_str())
+        .unwrap_or(editor_fg))), bg: style.bg.clone(), italic: false, bold: false });
 
     Theme { name, style, ui_styles, tok_scopes, tok_styles }
 }
