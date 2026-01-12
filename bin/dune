@@ -5,7 +5,7 @@
   (foreign_stubs
     (language c)
     (names c_stub))
-  (libraries flex unix ANSITerminal str)
+  (libraries flex unix ANSITerminal str shared_api config)
   (link_flags 
     (:standard 
     -cclib -L../../tsh_bindings/target/release 

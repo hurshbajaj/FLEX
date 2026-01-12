@@ -2,6 +2,7 @@
 
 open Unix
 open Types
+open Shared_api
 open Helper
 
 exception Break
@@ -25,7 +26,6 @@ let strip_path_delimiters path =
   path
 
 let draw_status edtr =
-    log loggr (show_status edtr.status);
     let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "status" ) in
     let gUcO_B = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "statusOrnaments" ) in
     
@@ -115,7 +115,7 @@ let draw_viewport edtr =
 
     for i=1 to snd edtr.size  do
         let real_line = (i - 1) + edtr.viewport.top in
-        let content = if real_line > List.length edtr.buffer.lines - 1 then "" else ( List.nth content_full (i-1)) in
+        let content = ( List.nth content_full (i-1)) in
         cursor_to i (edtr.gutter.width+1); 
         let physical_start, to_apply = skip_visible_chars_with_escape content 0 edtr.viewport.left in
         let foc_ = ref (try String.sub content physical_start (String.length content - physical_start) with | Invalid_argument _ -> "") in
@@ -147,11 +147,18 @@ let draw_guttr edtr = (
     let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "line_no" ) in
     let hl_fg = highlight_text (int_of_string (List.nth gUcO 0)) (int_of_string(List.nth gUcO 1)) (int_of_string(List.nth gUcO 2)) in
     let hl_bg = highlight_bg (int_of_string (List.nth gUcO 4)) (int_of_string(List.nth gUcO 5)) (int_of_string(List.nth gUcO 6)) in
+
     for line = edtr.viewport.top+1 to (edtr.viewport.top + snd edtr.size) do 
         cursor_to (line - edtr.viewport.top) 1 ;
         print_string "\x1b[2K";
         let content = 
-            (
+            if line > List.length edtr.buffer.lines-1 then (
+                "  " ^ "~" ^ (
+                    String.make
+                    (String.length (string_of_int (List.length edtr.buffer.lines)) + 1 - 1)
+                    ' '
+                ) 
+            ) else (
                 (
                     String.make
                     (String.length (string_of_int (List.length edtr.buffer.lines)) + 1 - String.length (string_of_int line))
@@ -159,6 +166,7 @@ let draw_guttr edtr = (
                 )
                 ^ string_of_int line ^ "  "
             ) in
+
         edtr.gutter.width <- String.length content;
         print_string (content |> hl_bg |> hl_fg)
 
@@ -222,10 +230,10 @@ let handle_jmp_ev ev edtr =
             | '\'' -> Act_ToBufferBottom
             | _ -> if c <> '\027' && c <> ' ' then edtr.pending <- Some " "; Act_NONE
     )
-    | 'w' -> Act_MovUp
-    | 'a' ->  Act_MovLeft
-    | 's' -> Act_MovDown
-    | 'd' -> Act_MovRight
+    | 'w' -> Act_MoveUp
+    | 'a' ->  Act_MoveLeft
+    | 's' -> Act_MoveDown
+    | 'd' -> Act_MoveRight
     | 'q' -> Act_Quit
     | 'i' -> Act_StatusI
     | 'l' -> Act_BoL
@@ -248,7 +256,7 @@ let handle_edit_ev ev edtr =
     | c when Some "" = edtr.pending -> (edtr.pending <- None; match c with 
         | ' ' ->  Act_ModeSwitch (Mode_Jmp) 
         | 'i' -> Act_ToggleStatus 
-        | 'a' -> Act_MovLeft | 'd' -> Act_MovRight  | 'w' -> Act_MovUp | 's' -> Act_MovDown
+        | 'a' -> Act_MoveLeft | 'd' -> Act_MoveRight  | 'w' -> Act_MoveUp | 's' -> Act_MoveDown
         |  _ -> Act_NONE
     )
     | '\027' -> Act_Pending ""
@@ -384,12 +392,12 @@ let rec eval_act action edtr =
         | Act_StatusI -> if edtr.status.status_i = 0 then ( edtr.status.status_i <- 1 ) else ( edtr.status.status_i <- 0 )
         | Act_ToggleStatus -> if edtr.status.toggled then (edtr.status.toggled <- false; edtr.status.gap <- 0) else (edtr.status.toggled <- true; edtr.status.gap <- edtr.status.gap_) 
 
-        | Act_MovUp -> (
+        | Act_MoveUp -> (
             if edtr.cy <> 1 then edtr.cy <- edtr.cy - 1 else (
                 if edtr.viewport.top <> 0 && edtr.viewport.left = 0 then ( edtr.viewport.top <- edtr.viewport.top - 1)
             )
         )
-        | Act_MovDown -> (
+        | Act_MoveDown -> (
             let next_line_idx = edtr.viewport.top + edtr.cy in
             let eof = next_line_idx >= List.length edtr.buffer.lines-1 in
             if not eof then (
@@ -401,8 +409,8 @@ let rec eval_act action edtr =
                 )       
             )
         )
-        | Act_MovRight -> if edtr.cx = visible_area () then eval_act Act_VpShiftX edtr else edtr.cx <- edtr.cx + 1;
-        | Act_MovLeft -> if edtr.cx <> 1 then edtr.cx <- edtr.cx - 1 else eval_act Act_XVpShiftX edtr
+        | Act_MoveRight -> if edtr.cx = visible_area () then eval_act Act_VpShiftX edtr else edtr.cx <- edtr.cx + 1;
+        | Act_MoveLeft -> if edtr.cx <> 1 then edtr.cx <- edtr.cx - 1 else eval_act Act_XVpShiftX edtr
 
         | Act_VpShiftX -> edtr.viewport.left <- (if ( edtr.viewport.left / (visible_area ()) = edtr.act_info.vp_shift ) then 0 else edtr.viewport.left + visible_area ());  edtr.cx <- 1
         | Act_XVpShiftX -> edtr.viewport.left <-  edtr.viewport.left - (visible_area ()); if edtr.viewport.left < 0 then edtr.viewport.left <- 0 else edtr.cx <- (visible_area ()) 

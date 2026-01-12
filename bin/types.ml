@@ -2,6 +2,7 @@
 
 open Unix
 open Helper
+open Shared_api
 
 (* TYPES *)
 type logger = {
@@ -9,33 +10,6 @@ type logger = {
     file: string;
     lock: Mutex.t;
 }
-
-type mode = Mode_Edt | Mode_Jmp
-
-type action = 
-    | Act_MovUp | Act_MovDown | Act_MovLeft | Act_MovRight 
-    | Act_PageDown | Act_PageUp | Act_EoL | Act_BoL
-    | Act_Quit 
-    | Act_RepLast
-    | Act_NONE 
-    | Act_Seq of action list
-    | Act_SeqUndo of action list * bool
-    | Act_ModeSwitch of mode
-    | Act_I_AddStr of string * (int * int) | Act_I_RmChar | Act_I_InsertLine
-
-    | Act_StatusI | Act_ToggleStatus
-
-    | Act_VpShiftX | Act_XVpShiftX
-
-    | Act_Pending of string
-    | Act_Undo
-    | Act_KillLine of int | Act_KillLineShift of int | Act_InsertLine of int * string
-    | Act_CenterLine of int
-
-    | Act_ToBufferTop | Act_ToBufferBottom
-
-    | Act_AddCharStr of int * int * bool * string (* line, start idx, W.E. , content *)
-    | Act_RmCharStr of int * int * int * bool (* line, start idx, length, W.E. *)
 
 type buffer = {
     file: string option;
@@ -130,6 +104,7 @@ let adjust_inline_bounds edtr =
     if (edtr.mode) = Mode_Edt then (
         if ( edtr.cx > visible_length+1) then edtr.cx <- visible_length + (if String.trim (List.nth edtr.buffer.lines (edtr.cy + edtr.viewport.top - 1)) = "" then 0 else 1)
     )else if ( edtr.cx > visible_length) then edtr.cx <- visible_length;
+    if edtr.cy + edtr.viewport.top > List.length edtr.buffer.lines then edtr.cy <- List.length edtr.buffer.lines - edtr.viewport.top ;
     if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap)
 
 let buffer_of_file fileG = 
@@ -157,7 +132,6 @@ let buffer_of_string file content =
     }
 
 let insert_str s idx str =
-    log loggr "INSERTING STR";
     let len = String.length s in
     match str with
     | Some str_ -> ( try ( String.sub s 0 idx ) with | _ -> "" ) ^ str_ ^ (try ( String.sub s idx (len - idx) ) with | _ -> "")
@@ -195,7 +169,7 @@ let get_vp_buf edtr =
         else
             let idx = top + i in
             let line =
-                if idx < buf_len then List.nth lines idx else ""
+                if idx < buf_len then List.nth lines idx else (String.make (fst edtr.size) ' ')
             in
             build (i + 1) (acc ^ line ^ "\n")
     in
