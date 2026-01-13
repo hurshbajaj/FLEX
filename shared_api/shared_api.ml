@@ -25,14 +25,14 @@ type action =
     | Act_AddCharStr of int * int * bool * string (* line, start idx, W.E. , content *)
     | Act_RmCharStr of int * int * int * bool (* line, start idx, length, W.E. *)
 
+type api_context = {
+    current_line: int
+}
+
 type keymap = {
     key:string;
     prefix: string option;
-    action: action list;
+    action: api_context -> action;
     mode: mode;
-}
-
-type api_context = {
-    current_line: int
 }
 

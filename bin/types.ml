@@ -3,6 +3,7 @@
 open Unix
 open Helper
 open Shared_api
+open Config_handler
 
 (* TYPES *)
 type logger = {
@@ -67,6 +68,8 @@ type editor = {
 
     mutable undo_lst: action list;
     gutter: gutter;
+
+    config: config;
 }
 
 let get_logger file = 
@@ -95,20 +98,23 @@ let viewport_of_ctx buffer size =
         left = 0;
     }
 
-let real_length edtr = ( try max 1 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 1 | Failure nth -> 1 )
+let real_length edtr = ( try max 0 ( String.length ( List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) ) ) with Invalid_argument _ -> 0 | Failure nth -> 0 )
 
 let adjust_inline_bounds edtr = 
     let real_length_ = real_length edtr in
-    let visible_length = max 1 (real_length_ - edtr.viewport.left) in
+    let visible_length = (real_length_ - edtr.viewport.left) in
+    log loggr ("REAL LENGTH: " ^ string_of_int real_length_);
+    log loggr ("CX: " ^ string_of_int edtr.cx);
+    log loggr ("REAL LEN: " ^ string_of_int visible_length);
     
     if (edtr.mode) = Mode_Edt then (
-        if ( edtr.cx > visible_length+1) then edtr.cx <- visible_length + (if String.trim (List.nth edtr.buffer.lines (edtr.cy + edtr.viewport.top - 1)) = "" then 0 else 1)
-    )else if ( edtr.cx > visible_length) then edtr.cx <- visible_length;
+        if ( edtr.cx > visible_length+1) then edtr.cx <- max 1 visible_length + (if String.trim (List.nth edtr.buffer.lines (edtr.cy + edtr.viewport.top - 1)) = "" then 0 else 1)
+    )else if ( edtr.cx > visible_length) then edtr.cx <- max 1 visible_length;
     if edtr.cy + edtr.viewport.top > List.length edtr.buffer.lines then edtr.cy <- List.length edtr.buffer.lines - edtr.viewport.top ;
     if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap)
 
-let buffer_of_file fileG = 
-    let conf = Highlight.get_lang_config () in
+let buffer_of_file fileG theme = 
+    let conf = Highlight.get_lang_config (theme) in
     match fileG with 
     | Some file -> (
     let ic = open_in file in
@@ -122,13 +128,13 @@ let buffer_of_file fileG =
     } )
     | None -> {file = None; lines=[]; highlight_conf = conf;}
 
-let buffer_of_string file content = 
+let buffer_of_string file content theme = 
     {
         file=file;
         lines=(
             String.split_on_char '\n' content
         );
-        highlight_conf=Highlight.get_lang_config ()
+        highlight_conf=Highlight.get_lang_config (theme)
     }
 
 let insert_str s idx str =

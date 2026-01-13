@@ -1,9 +1,11 @@
 [@@@warning "-26-27-32-33-21-69-37-34"]
 
 open Unix
+
+open Helper
+open Config_handler
 open Types
 open Shared_api
-open Helper
 
 exception Break
 
@@ -26,8 +28,8 @@ let strip_path_delimiters path =
   path
 
 let draw_status edtr =
-    let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "status" ) in
-    let gUcO_B = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "statusOrnaments" ) in
+    let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (edtr.config.theme ) "status" ) in
+    let gUcO_B = String.split_on_char ' ' ( Highlight.get_ui_colors (edtr.config.theme ) "statusOrnaments" ) in
     
     let status_fg_r = int_of_string (List.nth gUcO 0) in
     let status_fg_g = int_of_string (List.nth gUcO 1) in
@@ -106,7 +108,7 @@ let draw_status edtr =
     edtr.status.status_start <- new_status_start;
     edtr.status.status_row <- new_status_row
 
-let syntatic_highlight edtr buf = Highlight.highlight buf edtr.buffer.highlight_conf
+let syntatic_highlight edtr buf = Highlight.highlight buf edtr.buffer.highlight_conf (edtr.config.theme)
 
 let draw_viewport edtr = 
     let vpbuf = get_vp_buf edtr in
@@ -128,7 +130,7 @@ let draw_viewport edtr =
                 fst edtr.size - edtr.gutter.width
         in
         if i = snd edtr.size then (
-            edtr.status.overlap <- if String.length (List.nth vpbuf_split (i-1)) > max_len then true else false
+            edtr.status.overlap <- if String.length (List.nth vpbuf_split (i-1)) > edtr.status.status_start - edtr.status.gap && edtr.viewport.top + snd edtr.size <= List.length edtr.buffer.lines then true else false
         );
         let foc = 
             if visible_length_of !foc_ > max_len then (
@@ -144,7 +146,7 @@ let draw_viewport edtr =
     done
 
 let draw_guttr edtr = (
-    let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (Highlight.get_theme () ) "line_no" ) in
+    let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (edtr.config.theme ) "line_no" ) in
     let hl_fg = highlight_text (int_of_string (List.nth gUcO 0)) (int_of_string(List.nth gUcO 1)) (int_of_string(List.nth gUcO 2)) in
     let hl_bg = highlight_bg (int_of_string (List.nth gUcO 4)) (int_of_string(List.nth gUcO 5)) (int_of_string(List.nth gUcO 6)) in
 
@@ -153,11 +155,11 @@ let draw_guttr edtr = (
         print_string "\x1b[2K";
         let content = 
             if line > List.length edtr.buffer.lines-1 then (
-                "  " ^ "~" ^ (
+                " ~" ^ (
                     String.make
                     (String.length (string_of_int (List.length edtr.buffer.lines)) + 1 - 1)
                     ' '
-                ) 
+                ) ^ " "
             ) else (
                 (
                     String.make
@@ -440,11 +442,14 @@ let rec eval_act action edtr =
         )
 
         | Act_I_AddStr (c, pos) -> (
-            let line = List.nth edtr.buffer.lines (snd pos) in
-            let line_ = insert_str line (fst pos) (Some c) in
-            edtr.buffer.lines <- lst_replace_at (snd pos) line_ edtr.buffer.lines;
-            edtr.cx <- (fst pos-edtr.viewport.left) + 2;
-            if edtr.cx > (fst edtr.size) then (edtr.viewport.left <- edtr.viewport.left + fst edtr.size; edtr.cx <- 1)
+            if String.length (List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy)) > edtr.viewport.left then 
+            begin
+                let line = List.nth edtr.buffer.lines (snd pos) in
+                let line_ = insert_str line (fst pos) (Some c) in
+                edtr.buffer.lines <- lst_replace_at (snd pos) line_ edtr.buffer.lines;
+                edtr.cx <- (fst pos-edtr.viewport.left) + 2;
+                if edtr.cx > (fst edtr.size) then (edtr.viewport.left <- edtr.viewport.left + fst edtr.size; edtr.cx <- 1)
+            end
         )
         | Act_I_RmChar -> ( 
             if edtr.cx > 1 then (
@@ -492,12 +497,14 @@ let rec eval_act action edtr =
             
             cy_into_vp edtr (edtr.cy + edtr.viewport.top);
 
-            edtr.cx <- 1
+            edtr.cx <- 1;
+            edtr.viewport.left <- 0
         )
         | Act_InsertLine (line_no, content) -> (
             edtr.buffer.lines <- lst_insert_at line_no content edtr.buffer.lines;
             cy_into_vp edtr (line_no);
-            edtr.cx <- 1
+            edtr.cx <- 1;
+            edtr.viewport.left <- 0
         )
         | Act_KillLine (line_no) -> (
             cy_into_vp edtr (max 0 (edtr.viewport.top + edtr.cy - 1));
@@ -544,6 +551,7 @@ let run edtr =
     with e -> (if  e <> Break then ( (cleanup fd old); logger_done loggr; raise e));
 
     cleanup fd old; logger_done loggr
+
 let () = 
     let argc = Array.length Sys.argv in
     let file = ref "" in
@@ -552,7 +560,8 @@ let () =
             file := Sys.argv.(1)
         );
 
-    let buffer = buffer_of_file (Some !file) in
+    let conf = get_conf () in
+    let buffer = buffer_of_file (Some !file) conf.theme in
 
     let act_info = {
         vp_shift = 0;
@@ -564,7 +573,7 @@ let () =
         status_len = 0;
         status_start = fst size;
         status_row = snd size;
-        overlap = true;
+        overlap = false;
         gap = 3;
         gap_ = 3;
         toggled = true;
@@ -583,6 +592,7 @@ let () =
         gutter = {
             width = 0;
         };
+        config = conf;
     } in
 
     Sys.set_signal Sys.sigwinch (Sys.Signal_handle (fun _ -> 

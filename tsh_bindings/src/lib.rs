@@ -129,12 +129,8 @@ fn map_textmate_to_capture(textmate_scope: &str) -> Option<String> {
     Some(capture.to_string())
 }
 
-fn parse_syntax_highlight_src (file_name: &str) -> Theme {
-    let base = std::env::var("FLEX_QUERIES")
-        .expect("FLEX_QUERIES environment variable not set");
-    let base = Path::new(&base);
-    
-    let json_path = base.join(file_name);
+fn parse_syntax_highlight_src (file_path: &str) -> Theme {
+    let json_path = Path::new(file_path);
     let json_string = fs::read_to_string(&json_path).unwrap_or_else(|e| {
         eprintln!("Failed to read theme: {}", e);
         panic!("Could not find theme at {:?}", json_path);
@@ -206,8 +202,6 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
 
     let mut ui_styles = HashMap::new();
 
-    /* UI STYLES */
-
     ui_styles.insert("default".to_string(), style.clone());
 
     let status_bg = json.colors.get("statusBar.background")
@@ -240,28 +234,6 @@ fn parse_syntax_highlight_src (file_name: &str) -> Theme {
     Theme { name, style, ui_styles, tok_scopes, tok_styles }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn print_theme_mapping() {
-        let theme = parse_syntax_highlight_src("theme.json");
-        let mut names: Vec<String> = theme.tok_scopes.keys().cloned().collect();
-        names.sort();
-        
-        println!("\nCapture name -> Style index -> Colors:");
-        for name in &names {
-            if let Some(&style_idx) = theme.tok_scopes.get(name) {
-                if let Some(style) = theme.tok_styles.get(style_idx) {
-                    println!("{}: index {} -> fg: {:?}, bg: {:?}, bold: {}, italic: {}", 
-                        name, style_idx, style.fg, style.bg, style.bold, style.italic);
-                }
-            }
-        }
-    }
-}
-
 fn fetch_queries() -> (String, String, String) {
     let base = std::env::var("FLEX_QUERIES")
         .expect("FLEX_QUERIES environment variable not set");
@@ -283,9 +255,10 @@ fn fetch_lang() -> Language {
 fn fetch_lang_name() -> String {
     String::from_str("ocaml").unwrap()
 }
-fn build_config() -> HighlightConfiguration {
-    let temp_a = parse_syntax_highlight_src("theme.json");
-    let mut names = temp_a.tok_scopes.keys().collect::<Vec<&String>>();
+unsafe fn build_config(temp_a: *mut Theme) -> HighlightConfiguration {
+    let mut names: Vec<&str> = (*temp_a).tok_scopes.keys()
+        .map(|s| s.as_str())
+        .collect();
     names.sort();
 
     let (h, i, l) = fetch_queries();
@@ -301,8 +274,8 @@ fn build_config() -> HighlightConfiguration {
     cfg
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn get_lang_config() -> *mut HighlightConfiguration {
-    Box::into_raw(Box::new(build_config()))
+pub unsafe extern "C" fn get_lang_config(theme: *mut Theme) -> *mut HighlightConfiguration {
+    Box::into_raw(Box::new( build_config(theme) ))
 }
 
 #[unsafe(no_mangle)]
@@ -331,7 +304,6 @@ use std::path::PathBuf;
 pub fn log(x: impl ToString) {
     let mut path = std::env::current_exe().unwrap();
     path.pop();
-    path.push("../../..");
     path.push("flex.log");
 
     let mut file = OpenOptions::new()
@@ -344,17 +316,17 @@ pub fn log(x: impl ToString) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn highlight_ocaml_with_width(
+pub unsafe extern "C" fn highlight_ocaml_with_width(
     source_ptr: *const u8,
     source_len: usize,
     config: *mut HighlightConfiguration,
     terminal_width: usize,
+    theme: *mut Theme
 ) -> *mut c_char {
     let source = unsafe { std::slice::from_raw_parts(source_ptr, source_len) };
-    let theme = parse_syntax_highlight_src("theme.json");
-    let tok_styles = &theme.tok_styles;
-    let tok_scopes = &theme.tok_scopes;
-    let default_style = &theme.style;
+    let tok_styles = &(*theme).tok_styles;
+    let tok_scopes = &(*theme).tok_scopes;
+    let default_style = &(*theme).style;
 
     let source_str = std::str::from_utf8(source).unwrap();
     let original_width = terminal_width;
@@ -366,7 +338,7 @@ pub extern "C" fn highlight_ocaml_with_width(
         }
     }
 
-    let mut names: Vec<String> = tok_scopes.keys().cloned().collect();
+    let mut names: Vec<&str> = tok_scopes.keys().map(|s| s.as_str()).collect();
     names.sort();
     let mut highlighter = Highlighter::new();
     let highlights = highlighter
@@ -384,7 +356,7 @@ pub extern "C" fn highlight_ocaml_with_width(
             HighlightEvent::HighlightStart(s) => {
                 let scope_name = names.get(s.0);
                 if let Some(scope) = scope_name {
-                    if let Some(&style_idx) = tok_scopes.get(scope) {
+                    if let Some(&style_idx) = tok_scopes.get(*scope) {
                         current_style = tok_styles.get(style_idx);
                     }
                 }
@@ -447,12 +419,13 @@ pub extern "C" fn highlight_ocaml_with_width(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn highlight_ocaml(
+pub unsafe extern "C" fn highlight_ocaml(
     source_ptr: *const u8,
     source_len: usize,
     config: *mut HighlightConfiguration,
+    theme: *mut Theme,
 ) -> *mut c_char {
-    highlight_ocaml_with_width(source_ptr, source_len, config, get_terminal_width())
+    highlight_ocaml_with_width(source_ptr, source_len, config, get_terminal_width(), theme)
 }
 
 fn apply_style_incremental(
@@ -529,8 +502,9 @@ pub extern "C" fn free_rust_string(s: *mut c_char) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn get_theme() -> *mut Theme {
-    Box::into_raw(Box::new(parse_syntax_highlight_src("theme.json")))
+pub unsafe extern "C" fn get_theme(source_ptr: *const u8, source_len: usize) -> *mut Theme {
+    let source = str::from_utf8_unchecked ( unsafe { std::slice::from_raw_parts(source_ptr, source_len) } );
+    Box::into_raw(Box::new(parse_syntax_highlight_src(source)))
 }
 
 #[unsafe(no_mangle)]
@@ -542,4 +516,3 @@ pub extern "C" fn free_theme(theme: *mut Theme) {
         drop(Box::from_raw(theme));
     }
 }
-//themes fix
