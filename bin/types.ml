@@ -103,15 +103,19 @@ let real_length edtr = ( try max 0 ( String.length ( List.nth edtr.buffer.lines 
 let adjust_inline_bounds edtr = 
     let real_length_ = real_length edtr in
     let visible_length = (real_length_ - edtr.viewport.left) in
-    log loggr ("REAL LENGTH: " ^ string_of_int real_length_);
-    log loggr ("CX: " ^ string_of_int edtr.cx);
-    log loggr ("REAL LEN: " ^ string_of_int visible_length);
     
     if (edtr.mode) = Mode_Edt then (
         if ( edtr.cx > visible_length+1) then edtr.cx <- max 1 visible_length + (if String.trim (List.nth edtr.buffer.lines (edtr.cy + edtr.viewport.top - 1)) = "" then 0 else 1)
     )else if ( edtr.cx > visible_length) then edtr.cx <- max 1 visible_length;
     if edtr.cy + edtr.viewport.top > List.length edtr.buffer.lines then edtr.cy <- List.length edtr.buffer.lines - edtr.viewport.top ;
-    if edtr.cy = snd edtr.size && edtr.cx >= edtr.status.status_start - edtr.status.gap then edtr.cx <- max 1 (edtr.status.status_start - edtr.status.gap)
+    
+    log loggr ("STATUS_START: " ^ string_of_int edtr.status.status_start);
+    log loggr ("STATUS_GAP: " ^ string_of_int edtr.status.gap);
+    log loggr ("STATUS_LEN: " ^ string_of_int edtr.status.status_len);
+
+    let status_real_start = edtr.status.status_start - edtr.status.gap - edtr.status.status_len in
+    if edtr.cy = snd edtr.size && edtr.cx >= status_real_start then edtr.cx <- max 1 status_real_start;
+    edtr.cy <- min (edtr.cy + edtr.viewport.top) (max (List.length edtr.buffer.lines - edtr.viewport.top - 1) 1)
 
 let buffer_of_file fileG theme = 
     let conf = Highlight.get_lang_config (theme) in

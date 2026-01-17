@@ -130,7 +130,7 @@ let draw_viewport edtr =
                 fst edtr.size - edtr.gutter.width
         in
         if i = snd edtr.size then (
-            edtr.status.overlap <- if String.length (List.nth vpbuf_split (i-1)) > edtr.status.status_start - edtr.status.gap && edtr.viewport.top + snd edtr.size <= List.length edtr.buffer.lines then true else false
+            edtr.status.overlap <- if String.length (List.nth vpbuf_split (i-1)) > edtr.status.status_start - edtr.status.gap - edtr.status.status_len && edtr.viewport.top + snd edtr.size <= List.length edtr.buffer.lines then true else false
         );
         let foc = 
             if visible_length_of !foc_ > max_len then (
@@ -442,7 +442,7 @@ let rec eval_act action edtr =
         )
 
         | Act_I_AddStr (c, pos) -> (
-            if String.length (List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy)) > edtr.viewport.left then 
+            if String.length (List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1)) >= edtr.viewport.left then 
             begin
                 let line = List.nth edtr.buffer.lines (snd pos) in
                 let line_ = insert_str line (fst pos) (Some c) in
@@ -463,7 +463,10 @@ let rec eval_act action edtr =
                 let orig_cy = edtr.cy in
                 let current_line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
                 let prev_line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 2) in
-                eval_act (Act_KillLine  (edtr.viewport.top + edtr.cy - 1) ) edtr; if orig_cy = edtr.cy then edtr.cy <- edtr.cy - 1; edtr.cx <- String.length prev_line + 1; 
+                eval_act (Act_KillLine  (edtr.viewport.top + edtr.cy - 1) ) edtr;
+                if orig_cy = edtr.cy then edtr.cy <- edtr.cy - 1;
+                if String.length prev_line > fst edtr.size then (edtr.viewport.left <- String.length prev_line; edtr.cx <- 1) else
+                edtr.cx <- String.length prev_line + 1;
                 let line = List.nth edtr.buffer.lines (edtr.viewport.top + edtr.cy - 1) in
                 let line_ = line ^ current_line in  
                 edtr.buffer.lines <- lst_replace_at (edtr.viewport.top + edtr.cy - 1) line_ edtr.buffer.lines;
@@ -573,7 +576,7 @@ let () =
         status_len = 0;
         status_start = fst size;
         status_row = snd size;
-        overlap = false;
+        overlap = true;
         gap = 3;
         gap_ = 3;
         toggled = true;
