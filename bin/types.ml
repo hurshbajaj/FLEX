@@ -108,14 +108,11 @@ let adjust_inline_bounds edtr =
         if ( edtr.cx > visible_length+1) then edtr.cx <- max 1 visible_length + (if String.trim (List.nth edtr.buffer.lines (edtr.cy + edtr.viewport.top - 1)) = "" then 0 else 1)
     )else if ( edtr.cx > visible_length) then edtr.cx <- max 1 visible_length;
     if edtr.cy + edtr.viewport.top > List.length edtr.buffer.lines then edtr.cy <- List.length edtr.buffer.lines - edtr.viewport.top ;
-    
-    log loggr ("STATUS_START: " ^ string_of_int edtr.status.status_start);
-    log loggr ("STATUS_GAP: " ^ string_of_int edtr.status.gap);
-    log loggr ("STATUS_LEN: " ^ string_of_int edtr.status.status_len);
 
     let status_real_start = edtr.status.status_start - edtr.status.gap - edtr.status.status_len in
     if edtr.cy = snd edtr.size && edtr.cx >= status_real_start then edtr.cx <- max 1 status_real_start;
-    edtr.cy <- min (edtr.cy + edtr.viewport.top) (max (List.length edtr.buffer.lines - edtr.viewport.top - 1) 1)
+    
+    if (edtr.cy + edtr.viewport.top + 1) > List.length edtr.buffer.lines then (edtr.cy <- (max (List.length edtr.buffer.lines - edtr.viewport.top - 1) 1))
 
 let buffer_of_file fileG theme = 
     let conf = Highlight.get_lang_config (theme) in

@@ -6,6 +6,12 @@ let fetch_theme = "/home/hursh/ocaml_ml/flex/queries/theme.json"
 let fetch_keymappings = [
     (* JMP Mode *)
     {
+        key = "q";
+        prefix = None;
+        action = (fun ctx -> Act_Quit);
+        mode = Mode_Jmp;
+    };
+    {
         key = "l";
         prefix = Some "k";
         action = (fun ctx -> (Act_KillLine ctx.current_line));

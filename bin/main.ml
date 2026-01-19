@@ -27,6 +27,11 @@ let strip_path_delimiters path =
   in
   path
 
+let compact_pending s = match s with 
+| "ESC" -> ""
+| "SPACE" ->"_"
+|_->s
+
 let draw_status edtr =
     let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (edtr.config.theme ) "status" ) in
     let gUcO_B = String.split_on_char ' ' ( Highlight.get_ui_colors (edtr.config.theme ) "statusOrnaments" ) in
@@ -50,14 +55,14 @@ let draw_status edtr =
 
     let content, visual_len, pending_part = if edtr.status.status_i = 0 then
         let base = mode_str in
-        let pending_str = if has_pending then (match edtr.pending with Some c -> c | None -> "") else "" in
+        let pending_str = if has_pending then (match edtr.pending with Some c -> compact_pending c | None -> "") else "" in
         let visual = (if has_pending then 2 + String.length pending_str + (if edtr.status.overlap then 0 else 1) else 0) + String.length base + (if edtr.status.overlap || has_pending then 0 else 1) in
         let display = (if edtr.status.overlap || has_pending then "" else " ") ^ base in
         let pending = if has_pending then Some ((if edtr.status.overlap then "" else " ") ^ pending_str ^ "*") else None in
         (display, visual, pending)
         else
             let text = Printf.sprintf "%s%d : %d | %s" 
-              (if edtr.status.overlap || has_pending then "" else " ")
+              (if edtr.status.overlap then "" else " ")
               (edtr.viewport.top + edtr.cy) 
               (edtr.viewport.left + edtr.cx)
               (Printf.sprintf "%s / %s" 
@@ -195,76 +200,34 @@ let cy_into_vp edtr line_no =
         edtr.cy <- buffer_line - edtr.viewport.top + 1
     )
 
-let handle_jmp_ev ev edtr = 
-    match ev with
-    | c when (Some "k" = edtr.pending) -> (
-        edtr.pending <- None;
-        match c with 
-            | 'l' -> Act_KillLine  (edtr.viewport.top + edtr.cy - 1)
-            | _ -> if c <> '\027' && c <> 'l' then edtr.pending <- Some ""; Act_NONE
-    )
-    | c when (Some "c" = edtr.pending) -> (
-        edtr.pending <- None;
-        match c with 
-            | 'x' -> Act_CenterLine (edtr.viewport.top + edtr.cy - 1)
-            | _ -> if c <> '\027' && c <> 'c' then edtr.pending <- Some ""; Act_NONE
-    )
-    | c when (Some "" = edtr.pending) -> (
-        edtr.pending <- None;
-        match c with 
-            | 'l' -> Act_EoL
-            | ' ' -> Act_ModeSwitch (Mode_Edt)
-            | ';' -> Act_VpShiftX
-            | 'i' -> Act_ToggleStatus
-            | 'w' -> Act_PageUp
-            | 's' -> Act_PageDown
-            | '\n' -> Act_Seq ( 
-                Act_InsertLine (edtr.cy + edtr.viewport.top - 1, "")
-                ::( Act_ModeSwitch Mode_Edt ) 
-                :: []
-            )
-            | _ -> if c <> '\027' then edtr.pending <- Some ""; Act_NONE
-    )
-    | c when (Some " " = edtr.pending) -> (
-        edtr.pending <- None;
-        match c with 
-            | ';' -> Act_ToBufferTop
-            | '\'' -> Act_ToBufferBottom
-            | _ -> if c <> '\027' && c <> ' ' then edtr.pending <- Some " "; Act_NONE
-    )
-    | 'w' -> Act_MoveUp
-    | 'a' ->  Act_MoveLeft
-    | 's' -> Act_MoveDown
-    | 'd' -> Act_MoveRight
-    | 'q' -> Act_Quit
-    | 'i' -> Act_StatusI
-    | 'l' -> Act_BoL
-    | 'u' -> Act_Undo
-    | '.' -> Act_RepLast
-    | '\n' -> Act_Seq (
-        Act_InsertLine (edtr.cy + edtr.viewport.top , "")
-        ::( Act_ModeSwitch Mode_Edt ) 
-        ::[]
-    )
-    | 'k' -> Act_Pending "k"
-    | 'c' -> Act_Pending "c"
-    | '\027' -> Act_Pending ""
-    | ' ' -> Act_Pending " "
-    | _ -> Act_NONE
+let fetch_api_ctx edtr = {
+    current_line = edtr.viewport.top + edtr.cy - 1
+}
+
+let string_of_ev ev = (
+    match ev with 
+    | '\027' -> "ESC"
+    | '\n' -> "ENTER"
+    | '\b' -> "BACKSPACE"
+    | ' ' -> "SPACE"
+    | _ -> String.make 1 ev
+)
+
+let handle_jmp_ev ev edtr = (
+    let is_pen = if edtr.pending = None then false else true in
+    try ( (Hashtbl.find edtr.config.keymappings.mode_JMP (let outt = edtr.pending in if is_pen then edtr.pending <- None; outt, string_of_ev ev)) (fetch_api_ctx edtr) ) with | _ -> if Some (string_of_ev ev) = edtr.pending || string_of_ev ev = "ESC" then edtr.pending <- None; Act_NONE
+)
 
 let handle_edit_ev ev edtr = 
+    if ev = '\000' then Act_NONE else (
+    let is_pen = if edtr.pending = None then false else true in
+    try ( (Hashtbl.find edtr.config.keymappings.mode_EDT (let outt = edtr.pending in if is_pen then edtr.pending <- None; outt, string_of_ev ev)) (fetch_api_ctx edtr) ) with | _ -> if Some (string_of_ev ev) = edtr.pending || string_of_ev ev = "ESC" then edtr.pending <- None; 
+
     match ev with
-    | '\000' -> Act_NONE
-    | c when Some "" = edtr.pending -> (edtr.pending <- None; match c with 
-        | ' ' ->  Act_ModeSwitch (Mode_Jmp) 
-        | 'i' -> Act_ToggleStatus 
-        | 'a' -> Act_MoveLeft | 'd' -> Act_MoveRight  | 'w' -> Act_MoveUp | 's' -> Act_MoveDown
-        |  _ -> Act_NONE
-    )
-    | '\027' -> Act_Pending ""
     | '\127' -> Act_I_RmChar
     | '\n' -> Act_I_InsertLine
     | c ->  Act_I_AddStr((String.make 1 c), (edtr.viewport.left + edtr.cx-1, (edtr.viewport.top + edtr.cy - 1) ))
+    )
 
 let handle_ev mode ev edtr = 
     match mode with
@@ -420,7 +383,7 @@ let rec eval_act action edtr =
         | Act_PageUp -> if edtr.viewport.left = 0 then (edtr.viewport.top <- max 0 (edtr.viewport.top - snd edtr.size); edtr.cx <- 1; edtr.cy <- 1)
         | Act_PageDown -> if edtr.viewport.left = 0 then ( edtr.viewport.top <- min (List.length edtr.buffer.lines - snd edtr.size) (edtr.viewport.top + snd edtr.size); edtr.cx <- 1; edtr.cy <- snd edtr.size)
         | Act_EoL -> edtr.cx <- min (visible_area ()) (real_length_ - edtr.viewport.left)
-        | Act_BoL -> if edtr.viewport.left = 0 then edtr.cx <- (real_length_) - real_length_trim + 1 else edtr.cx <- 1
+        | Act_BoL -> if edtr.viewport.left = 0 then edtr.cx <- (max 1 real_length_) - (max 1 real_length_trim) + 1 else edtr.cx <- 1 
         | Act_CenterLine line -> (
             let atline = edtr.viewport.top + edtr.cy in
             let fTOP = ( ( edtr.cy )  - (snd edtr.size/2) ) + edtr.viewport.top in
