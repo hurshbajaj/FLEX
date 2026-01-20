@@ -79,7 +79,7 @@ let draw_status edtr =
                     in
 
     cursor_to edtr.status.status_row (edtr.status.status_start - edtr.status.gap);
-    Printf.printf "\027[48;2;%d;%d;%dm%s\027[0m" ornament_bg_r ornament_bg_g ornament_bg_b (String.make (edtr.status.status_len+edtr.status.gap) ' ');
+    Printf.printf "%s\027[0m" (String.make (edtr.status.status_len+edtr.status.gap) ' ');
 
     let new_status_len = visual_len + 4 in
     let new_status_start = fst(edtr.size) - new_status_len + 1 in
