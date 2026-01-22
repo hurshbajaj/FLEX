@@ -1,7 +1,7 @@
 [@@@warning "-26-27-32-33-21-69-37-34"]
 open Shared_api
 
-let fetch_theme = "/home/hursh/ocaml_ml/flex/queries/theme.json"
+let fetch_theme = "/home/hursh/ocaml_ml/flex/queries/theme1.json"
 
 let fetch_keymappings = [
     (* JMP Mode *)
@@ -68,13 +68,13 @@ let fetch_keymappings = [
     {
         key = "ENTER";
         prefix = Some "ESC";
-        action = (fun ctx -> Act_Seq ((Act_InsertLine (ctx.current_line - 1, "")) :: (Act_ModeSwitch Mode_Edt) :: [] ));
+        action = (fun ctx -> Act_Seq ((Act_InsertLine (ctx.current_line, "")) :: (Act_ModeSwitch Mode_Edt) :: [] ));
         mode = Mode_Jmp;
     };
     {
         key = "ENTER";
         prefix = None;
-        action = (fun ctx -> Act_Seq ( (Act_InsertLine (ctx.current_line, "")) :: (Act_ModeSwitch Mode_Edt) :: [] ));
+        action = (fun ctx -> Act_Seq ( (Act_InsertLine (ctx.current_line +1, "")) :: (Act_ModeSwitch Mode_Edt) :: [] ));
         mode = Mode_Jmp;
     };
     {
