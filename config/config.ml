@@ -1,6 +1,12 @@
 [@@@warning "-26-27-32-33-21-69-37-34"]
 open Shared_api
 
+(* buffer compensation alpha -> 1 - 15 *)
+let fetch_internal_BCA = 2
+
+(* buffer leaf node capacity -> _ kb *)
+let fetch_internal_BLNC = 16
+
 let fetch_theme = "/home/hursh/ocaml_ml/flex/queries/theme1.json"
 
 let fetch_keymappings = [

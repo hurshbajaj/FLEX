@@ -1,7 +1,7 @@
 (executable
   (public_name flex)
   (name main)
-  (modules main highlight types helper config_handler)
+  (modules main)
   (foreign_stubs
     (language c)
     (names c_stub))

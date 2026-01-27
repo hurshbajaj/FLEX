@@ -1,2 +1,7 @@
 (library
- (name flex))
+ (name flex)
+ (modules buffer_handles highlight types helper config_handler)
+ (libraries unix ANSITerminal str shared_api config)
+  (preprocess
+   (pps ppx_deriving.show))
+  )

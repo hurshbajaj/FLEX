@@ -2,10 +2,12 @@
 
 open Unix
 
-open Helper
-open Config_handler
-open Types
 open Shared_api
+
+open Flex.Types
+open Flex.Config_handler
+open Flex.Helper
+open Flex.Buffer_handles
 
 exception Break
 
@@ -33,8 +35,8 @@ let compact_pending s = match s with
 |_->s
 
 let draw_status edtr =
-    let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (edtr.config.theme ) "status" ) in
-    let gUcO_B = String.split_on_char ' ' ( Highlight.get_ui_colors (edtr.config.theme ) "statusOrnaments" ) in
+    let gUcO = String.split_on_char ' ' ( Flex.Highlight.get_ui_colors (edtr.config.theme ) "status" ) in
+    let gUcO_B = String.split_on_char ' ' ( Flex.Highlight.get_ui_colors (edtr.config.theme ) "statusOrnaments" ) in
     
     let status_fg_r = int_of_string (List.nth gUcO 0) in
     let status_fg_g = int_of_string (List.nth gUcO 1) in
@@ -113,7 +115,7 @@ let draw_status edtr =
     edtr.status.status_start <- new_status_start;
     edtr.status.status_row <- new_status_row
 
-let syntatic_highlight edtr buf = Highlight.highlight buf edtr.buffer.highlight_conf (edtr.config.theme)
+let syntatic_highlight edtr buf = Flex.Highlight.highlight buf edtr.buffer.highlight_conf (edtr.config.theme)
 
 let draw_viewport edtr = 
     let vpbuf = get_vp_buf edtr in
@@ -151,7 +153,7 @@ let draw_viewport edtr =
     done
 
 let draw_guttr edtr = (
-    let gUcO = String.split_on_char ' ' ( Highlight.get_ui_colors (edtr.config.theme ) "line_no" ) in
+    let gUcO = String.split_on_char ' ' ( Flex.Highlight.get_ui_colors (edtr.config.theme ) "line_no" ) in
     let hl_fg = highlight_text (int_of_string (List.nth gUcO 0)) (int_of_string(List.nth gUcO 1)) (int_of_string(List.nth gUcO 2)) in
     let hl_bg = highlight_bg (int_of_string (List.nth gUcO 4)) (int_of_string(List.nth gUcO 5)) (int_of_string(List.nth gUcO 6)) in
 

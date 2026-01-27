@@ -92,4 +92,11 @@ let read_char edtr : char =
         ( '\000') else 
             b1
 
-
+let count_lines s = (
+  let n = String.length s in
+  let count = ref 0 in
+  for i = 0 to n - 1 do
+    if s.[i] = '\n' then incr count
+  done;
+  if n = 0 then 0 else !count + 1
+)

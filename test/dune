@@ -1,0 +1,5 @@
+(test
+ (name test_main)
+ (libraries ounit2 flex)
+ (preprocess (pps ppx_deriving.show))
+)
