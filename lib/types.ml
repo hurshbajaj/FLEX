@@ -189,33 +189,6 @@ let update_cursor_style edtr =
     | Mode_Edt -> if not (is_some edtr.pending ) then print_string "\027[6 q" else print_string "\027[3 q"
     | Mode_Jmp -> if not (is_some edtr.pending ) then print_string "\027[2 q" else print_string "\027[3 q"
 
-(* PRELIMS *)
-
-let raw_mode  fd = 
-    let attr = tcgetattr fd in
-    let raw = {
-        attr with
-        c_icanon =false;
-        c_echo = false; 
-        c_isig = false;
-    } in
-    tcsetattr fd TCSANOW raw
-
-let disable_raw fd old = tcsetattr fd TCSANOW old
-
-let alt_screen cmd = 
-    if cmd = 1 then (print_string "\027[?1049h") else print_string "\027[?1049l";
-    flush Stdlib.stdout
-
-let cleanup fd old = 
-    alt_screen 0;
-    disable_raw fd old
-
-let clear () =     
-    print_string "\027[2J\027[H";
-    flush Stdlib.stdout
-
-(* helper *)
 
 let string_of_mode mode = match mode with
 | Mode_Jmp -> "JMP"

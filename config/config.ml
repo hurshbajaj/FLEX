@@ -7,7 +7,7 @@ let fetch_internal_BCA = 2
 (* buffer leaf node capacity -> _ kb *)
 let fetch_internal_BLNC = 16
 
-let fetch_theme = "/home/hursh/ocaml_ml/flex/queries/theme1.json"
+let fetch_theme = "/home/hursh/Proj/FLEX/queries/theme1.json"
 
 let fetch_keymappings = [
     (* JMP Mode *)
