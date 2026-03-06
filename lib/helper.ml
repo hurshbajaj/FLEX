@@ -25,7 +25,7 @@ let clear () =
     print_string "\027[2J\027[H";
     flush Stdlib.stdout
 
-let sublist start_idx end_idx lst =
+let sublist start_idx end_idx lst = (* inclusive *)
   let rec aux i = function
     | [] -> []
     | x :: xs ->
@@ -34,6 +34,12 @@ let sublist start_idx end_idx lst =
         else aux (i + 1) xs
   in
   aux 0 lst
+
+let rec cutlist n lst =
+  match (n, lst) with
+  | (0, _) -> []
+  | (_, []) -> []
+  | (n, h :: t) -> h :: cutlist (n - 1) t
 
 let remove_slice s start len =
   let n = String.length s in
@@ -116,3 +122,4 @@ let read_char edtr : char =
         ( '\000') else 
             b1
 
+exception Unreachable

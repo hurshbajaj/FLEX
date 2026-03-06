@@ -4,9 +4,9 @@
     Ropes at home:
 *)
 
-let max_leaf_weight = 16 (* kb *)
-let max_nodes = 32 (*| 8 + ( _2_ * 8 ) |*)
-type metadata = int array (* Node: count; lines; bytes | Piece: lines; bytes*) [@@deriving show]
+let max_leaf_weight = 7 (* in bytes *) 
+let max_nodes = 5 (*32*) (*| 8 + ( _2_ * 8 ) |*)
+type metadata = int array (* Node: count; lines; bytes | Piece Table: lines; bytes*) [@@deriving show]
 
 type buf_type = Buf_add | Buf_org [@@deriving show]
 type piece = {
@@ -15,14 +15,14 @@ type piece = {
     length: int;
 } [@@deriving show]
 type piece_el = Piece_Newline | Piece_None | Piece_Piece of piece [@@deriving show]
-type piece_table = {
+type pieceTable = {
     metadata: metadata;
-    table: piece_el list;
+    payload: piece_el list
 } [@@deriving show]
 
 type b_tree = 
-    | Btree_leaf of {metadata: metadata; payload: piece_table} 
-    | Btree_internode of {metadata: metadata; payload: (piece_table list) option; children: (b_tree option) array;}
+    | Btree_leaf of pieceTable
+    | Btree_internode of {metadata: metadata; payload: (piece_el list) option; children: (b_tree option) array;}
     [@@deriving show]
 
 type buffer = {
@@ -60,23 +60,40 @@ let orgBufBreakdown src =
   in
   aux [] src 0
 
+let pieceTableBreakdown pt = (
+    let rec aux byte_count line_count pieceTable_arr md_arr el_i i part_count = ( 
+        try 
+            (
+                let foc_lst = (pieceTable_arr.(el_i)) in
+                let foc_len, nle = match (List.nth foc_lst i) with | Piece_Piece p -> p.length, 0 | Piece_Newline ->  1, 1 | _ -> raise Helper.Unreachable in
+                if byte_count + foc_len > max_leaf_weight && el_i + 1 < Array.length pieceTable_arr then ( (* TODO rebalancing (check second condition) *)
+                    let foc_sect = Helper.sublist i (List.length foc_lst - 1) foc_lst in 
+                    pieceTable_arr.(el_i) <- Helper.sublist 0 (i-1) foc_lst;
+                    aux 0 0 (pieceTable_arr.(el_i + 1) <- foc_sect; pieceTable_arr) md_arr (el_i + 1) 0 (part_count + 1)
+                ) 
+                else (aux (byte_count + foc_len) (line_count+nle) pieceTable_arr (md_arr.(el_i) <- [| line_count + nle; byte_count + foc_len |]; md_arr) el_i (i+1)) part_count
+            )
+        with 
+        | _ -> (pieceTable_arr, md_arr, part_count)
+    ) in
+    let temp = Array.make max_nodes [] in
+    temp.(0) <- pt;
+    aux 0 0 temp (Array.make max_nodes [||]) 0 0 1
+)
+
 let init_buf org = 
 (
-    let table, orgLen = orgBufBreakdown org in
-    let pieceTable = {
-        metadata = [|orgLen; String.length org|]; 
-        table;
-    } in
+    let pieceTable, orgLen = orgBufBreakdown org in
+    let children, children_md, md_piece_count = pieceTableBreakdown pieceTable in
     let tree = Btree_internode {
-        metadata = [|1; orgLen; String.length org;|]; 
+        metadata = [|md_piece_count; orgLen; String.length org;|]; 
         payload = None; 
         children = (
-            let out = Array.make max_nodes None in 
-            out.(0) <- Some (Btree_leaf {
-                metadata = [|orgLen; String.length org|];
-                payload = pieceTable;
-            }); out
-        )
+            let out = Array.make max_nodes None in
+            for i = 0 to Array.length children - 1 do
+                if children.(i) != [] then out.(i) <- Some( Btree_leaf {metadata = children_md.(i); payload = children.(i);})
+            done; out
+        );
     } in
     {
         org_buf = org;
@@ -86,7 +103,7 @@ let init_buf org =
 )
 
 let exposed_buf_test _ = (
-    let buf = init_buf "WERKPLEJ\nHELLO" in
+    let buf = init_buf "HOLA\nHI\nBYE\n" in
     print_endline ("Add Buffer:" ^ if Buffer.contents buf.add_buf = "" then "" else "\n"); 
     print_string (Buffer.contents buf.add_buf);
     print_endline "<-------------------------------------------------------------------->\n";
