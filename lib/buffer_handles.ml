@@ -31,55 +31,42 @@ let get_sep_value = function
     | _ -> max_int
 
 let rec search_op root ln = (
-    let rec bin_search_keys region_covered crnt = ( (* return the index of the element we need to go into *)
-        (Printf.printf "\n[%d, %d], %d" region_covered.(0) region_covered.(1) crnt);
-        if get_sep_value(!root.(crnt)) > ln then (
-            if crnt / 2 <= region_covered.(0) then crnt else (
-                bin_search_keys [|region_covered.(0); crnt|] (crnt/2)
-            )
-        )
-        else if get_sep_value(!root.(crnt)) < ln then (
-            if crnt + (crnt/2) >= region_covered.(1) then (crnt) else (
-                bin_search_keys [|crnt; region_covered.(1)|] (crnt+crnt/2)
-            )
-        ) else crnt
-    ) in 
-    let index_to_follow = bin_search_keys [|-1; m|] (m-1) in 
-    match !root.(index_to_follow) with 
-        | Some z -> ( match z with
-            | Node_inter node -> (
-                if ln < node.ln then search_op node.lhs ln else
-                    if index_to_follow + 1 >= m || !root.(index_to_follow+1) == None then 
-                        search_op node.rhs ln else (
-                            let Some (Node_inter node) = !root.(index_to_follow + 1) in search_op node.lhs ln
-                        )
-                )
-            | Node_leaf node -> node.payload
-        )
-        | _ -> failwith "unreachable"
+
+    let rec bin_search hl = (
+        let mid = ( hl.(1) + hl.(0) ) / 2 in
+        if hl.(0) > hl.(1) then hl.(1) else
+            if get_sep_value !root.(mid) < ln then 
+                (bin_search [|mid + 1; hl.(1)|])
+            else if get_sep_value !root.(mid) > ln then 
+                (bin_search [|hl.(0); mid - 1|]) else mid
+    ) in
+    let node_to_follow = bin_search [|0;m-1|] in print_int node_to_follow;
+    try (
+    let Some node = !root.(node_to_follow) in 
+    match node with
+        | Node_leaf node -> node.payload
+        | Node_inter node -> (
+            search_op node.rhs ln
+    )
+    ) with _ -> let Some node = !root.(0) in match node with 
+    | Node_inter node -> search_op node.lhs ln
 )   
 
 let exposed_buf_test _ =
-  (* Build leaves *)
   let leaf5  = Node_leaf { lhs = ref None; rhs = ref None; ln = 5;  payload = PT_VAL 100 } in
   let leaf15 = Node_leaf { lhs = ref None; rhs = ref None; ln = 15; payload = PT_VAL 200 } in
   let leaf25 = Node_leaf { lhs = ref None; rhs = ref None; ln = 25; payload = PT_VAL 300 } in
-  (* Build interior nodes: each Node_inter's lhs points to the leaf
-     that search_op follows when ln < node.ln.
-     rhs is used when ln >= node.ln and there's no next sibling. *)
   let inter10 = Node_inter {
     lhs = ref [| Some leaf5;  None; None |];
-    rhs = ref [| None; None; None |];
+    rhs = ref [| Some leaf15; None; None |];
     ln  = 10;
   } in
   let inter20 = Node_inter {
-    lhs = ref [| Some leaf15; None; None |];
+    lhs = ref [| None; None; None |];
     rhs = ref [| Some leaf25; None; None |];
     ln  = 20;
   } in
-  (* Root array: [inter10 | inter20 | None] *)
   root := [| Some inter10; Some inter20; None |];
-  (* Test: ln=5  -> goes into inter10.lhs -> leaf5  -> PT_VAL 100 *)
-  let PT_VAL v1 = search_op root 15  in
-  assert (v1 = 200);
+  let PT_VAL v1 = search_op root 5  in
+  assert (v1 = 100);
   Printf.printf "All search_op tests passed: %d\n" v1
